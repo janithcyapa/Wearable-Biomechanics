@@ -15,11 +15,3 @@ This project implements an integrated wearable biomechanics system that unifies 
 **Hardware Support:**
 *   Designed for multi-node IMU configurations.
 
-### Repository Structure Recommendation
-For a mechanical engineer-led hybrid project, I recommend organizing your folders to separate the "Physics" math from the "ML" training:
-
-1.  `/hardware`: CAD files for wearable enclosures and PCB layouts.
-2.  `/physics_engine`: Python/MATLAB scripts for the rigid-body inverse dynamics (The "Skeleton" layer).
-3.  `/ml_pipeline`: Jupyter notebooks for training the LSTM model using OpenSim-augmented data.
-4.  `/firmware`: C++ code for real-time inference on your microcontroller (e.g., ESP32/Arduino).
-5.  `/docs`: Calibration protocols and ISB alignment guidelines.
