@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Combined File</title>
+    <link rel="stylesheet" href="./styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="toolbar" aria-labelledby="app-title">
+        <div>
+          <p class="eyebrow">IMU text combiner</p>
+          <h1 id="app-title">Combined File</h1>
+        </div>
+        <button class="ghost-button" id="reset-button" type="button" disabled>Reset</button>
+      </section>
+
+      <section class="workspace">
+        <label class="drop-zone" for="file-input" id="drop-zone">
+          <input id="file-input" type="file" accept=".txt,text/plain" multiple>
+          <span class="upload-mark" aria-hidden="true"></span>
+          <span class="upload-title">Upload device1 to device10 .txt files</span>
+          <span class="upload-subtitle">All filenames must share one timestamp.</span>
+        </label>
+
+        <aside class="status-panel" aria-live="polite">
+          <div class="status-line">
+            <span class="status-label">Files</span>
+            <strong id="file-count">0 / 10</strong>
+          </div>
+          <div class="status-line">
+            <span class="status-label">Timestamp</span>
+            <strong id="timestamp-value">-</strong>
+          </div>
+          <div class="status-line">
+            <span class="status-label">Rows</span>
+            <strong id="row-count">-</strong>
+          </div>
+          <button id="download-button" class="primary-button" type="button" disabled>
+            Download CSV
+          </button>
+        </aside>
+      </section>
+
+      <section class="details" id="details" hidden>
+        <h2>Selected Files</h2>
+        <div id="message-list" class="message-list"></div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>File</th>
+                <th>Device</th>
+                <th>Timestamp</th>
+                <th>Rows</th>
+                <th>IMUs</th>
+              </tr>
+            </thead>
+            <tbody id="file-table-body"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </main>
+
+    <script src="./script.js?v=20260514-numeric-fields"></script>
+  </body>
+</html>
