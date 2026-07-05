@@ -38,12 +38,23 @@ def exp_so3(omega):
 # }
 
 link_mapping = {
+    'Pelvis': ['device5_IMU1','device5_IMU2','device5_IMU3'],
+    'Torso': ['device9_IMU1'],
+    'Shoulder_Right': ['device9_IMU2'],
+    'Shoulder_Left': ['device9_IMU3'],
     'Upper_Arm_Right': ['device2_IMU1', 'device2_IMU2'],
     'Lower_Arm_Right': ['device6_IMU1', 'device6_IMU2'],
     'Palm_Right': ['device6_IMU3'],
+    'Upper_Arm_Left': ['device4_IMU1','device4_IMU2'],
+    'Lower_Arm_Left': ['device7_IMU1','device7_IMU2'],
+    'Palm_Left': ['device7_IMU3'],
+    'Upper_Leg_Right': ['device1_IMU1','device1_IMU2'],
+    'Lower_Leg_Right': ['device10_IMU1','device10_IMU2'],
+    'Foot_Right': ['device10_IMU3'],
+    'Upper_Leg_Left': ['device3_IMU1','device3_IMU2'],
+    'Lower_Leg_Left': ['device8_IMU1','device8_IMU2'],
+    'Foot_Left': ['device8_IMU3'],
 }
-
-
 
 # =====================================================================
 # 2. Automated Steady-State Detection & A-Pose
@@ -90,32 +101,46 @@ def find_steady_state(df, imu_cols, window=50):
         
     return steady_means, start_idx, end_idx
 
-def compute_apose_alignments(steady_means, imu_cols):
+def compute_apose_alignments(steady_means, imu_cols, link_name):
     """
-    Computes R_offset for all IMUs relative to the first IMU (Master) based on the A-Pose geometry.
+    Computes R_offset for all IMUs relative to the first IMU (Master) 
+    based on the A-Pose geometry, accounting for limb-specific orientations.
     """
     R_initials = {}
     
     for imu in imu_cols:
         acc_mean = steady_means[imu]['acc_mean']
         
-        # Z-axis (Against gravity)
+        # Z-axis (Against gravity) is Up
         Z = acc_mean / np.linalg.norm(acc_mean)
         
-        # Assume Y-axis (Lateral) is somewhat orthogonal to Z, pointing right or left depending on anatomy.
-        # For an A-pose, assuming knuckles forward, lateral is roughly along the sagittal plane.
-        # We mathematically enforce Y to be exactly orthogonal to Z.
-        ref_Y = np.array([0, 1.0, 0]) 
-        X = np.cross(ref_Y, Z)
-        
-        # If the cross product is near zero (e.g. Z is pure Y), pick a different reference
-        if np.linalg.norm(X) < 1e-5:
-            ref_Y = np.array([1.0, 0, 0])
+        # Segment-specific Tie-Breaker for Yaw
+        # We adjust our 'assumed forward' or 'assumed lateral' based on the limb
+        if 'Leg' in link_name:
+            # For legs, assuming the sensor X-axis generally points DOWN the leg
+            # and we want the person facing Global X.
+            ref_vector = np.array([1.0, 0, 0]) # Force X to align with Global Forward
+            Y = np.cross(Z, ref_vector)
+            
+            if np.linalg.norm(Y) < 1e-5:
+                ref_vector = np.array([0, -1.0, 0])
+                Y = np.cross(Z, ref_vector)
+                
+            Y = Y / np.linalg.norm(Y)
+            X = np.cross(Y, Z)
+            
+        else:
+            # Original logic for Arms/Torso
+            ref_Y = np.array([0, 1.0, 0]) 
             X = np.cross(ref_Y, Z)
             
-        X = X / np.linalg.norm(X)
-        Y = np.cross(Z, X)
-        
+            if np.linalg.norm(X) < 1e-5:
+                ref_Y = np.array([1.0, 0, 0])
+                X = np.cross(ref_Y, Z)
+                
+            X = X / np.linalg.norm(X)
+            Y = np.cross(Z, X)
+            
         R_initial = np.column_stack((X, Y, Z))
         R_initials[imu] = R_initial
         
@@ -129,7 +154,6 @@ def compute_apose_alignments(steady_means, imu_cols):
         R_offsets[imu] = R_master.T @ R_initials[imu]
         
     return R_offsets, R_master
-
 
 # =====================================================================
 # 3. Multi-IMU Intrinsic EKF Step Function
@@ -291,7 +315,7 @@ def process_dataset(df, dt=0.01):
         N = len(imus)
         
         # 1. Alignment to Global Reference
-        R_offsets_dict, R_world_to_master = compute_apose_alignments(global_steady_means, imus)
+        R_offsets_dict, R_world_to_master = compute_apose_alignments(global_steady_means, imus, link)
         print(f"  -> Rotation offsets:")
         for imu_name, r_off in R_offsets_dict.items():
             print(f"       {imu_name}:\n{r_off}")
@@ -348,126 +372,339 @@ def process_dataset(df, dt=0.01):
 
 
 # =====================================================================
-# 5. 3D Kinematics Animation
+# 5. Full-Body 3D Kinematics Animation
 # =====================================================================
 
-def animate_arm_3d(link_orientations, step=10, dt=0.01):
+# Skeleton definition: bone lengths (meters) and kinematic chain
+BONE_LENGTHS = {
+    'Pelvis':           0.15,  # Pelvis height (root)
+    'Torso':            0.40,  # Pelvis to neck
+    'Shoulder_Right':   0.18,  # Neck to right shoulder joint
+    'Shoulder_Left':    0.18,  # Neck to left shoulder joint
+    'Upper_Arm_Right':  0.28,  # Shoulder to elbow
+    'Lower_Arm_Right':  0.25,  # Elbow to wrist
+    'Palm_Right':       0.10,  # Wrist to fingertips
+    'Upper_Arm_Left':   0.28,
+    'Lower_Arm_Left':   0.25,
+    'Palm_Left':        0.10,
+    'Upper_Leg_Right':  0.42,  # Hip to knee
+    'Lower_Leg_Right':  0.40,  # Knee to ankle
+    'Foot_Right':       0.12,  # Ankle to toe
+    'Upper_Leg_Left':   0.42,
+    'Lower_Leg_Left':   0.40,
+    'Foot_Left':        0.12,
+}
+
+# A-pose bone directions in world frame (Z up, X forward, Y left)
+# Arms hang slightly to the sides, legs point down, torso points up
+BONE_DIRECTIONS = {
+    'Pelvis':           np.array([0, 0, 0]),         # Root origin (no bone vector)
+    'Torso':            np.array([0, 0, 1]),          # Up
+    'Shoulder_Right':   np.array([0, -1, 0]),         # Right
+    'Shoulder_Left':    np.array([0, 1, 0]),          # Left
+    'Upper_Arm_Right':  np.array([0, 0, -1]),         # Down (arms at sides in A-pose)
+    'Lower_Arm_Right':  np.array([0, 0, -1]),         # Down
+    'Palm_Right':       np.array([0, 0, -1]),         # Down
+    'Upper_Arm_Left':   np.array([0, 0, -1]),         # Down
+    'Lower_Arm_Left':   np.array([0, 0, -1]),         # Down
+    'Palm_Left':        np.array([0, 0, -1]),         # Down
+    'Upper_Leg_Right':  np.array([0, 0, -1]),         # Down
+    'Lower_Leg_Right':  np.array([0, 0, -1]),         # Down
+    'Foot_Right':       np.array([1, 0, 0]),          # Forward
+    'Upper_Leg_Left':   np.array([0, 0, -1]),         # Down
+    'Lower_Leg_Left':   np.array([0, 0, -1]),         # Down
+    'Foot_Left':        np.array([1, 0, 0]),          # Forward
+}
+
+# Kinematic chain: child -> parent
+# Each child's base position = parent's end position
+KINEMATIC_CHAIN = {
+    'Pelvis':           None,           # Root
+    'Torso':            'Pelvis',
+    'Shoulder_Right':   'Torso',
+    'Shoulder_Left':    'Torso',
+    'Upper_Arm_Right':  'Shoulder_Right',
+    'Lower_Arm_Right':  'Upper_Arm_Right',
+    'Palm_Right':       'Lower_Arm_Right',
+    'Upper_Arm_Left':   'Shoulder_Left',
+    'Lower_Arm_Left':   'Upper_Arm_Left',
+    'Palm_Left':        'Lower_Arm_Left',
+    'Upper_Leg_Right':  'Pelvis',
+    'Lower_Leg_Right':  'Upper_Leg_Right',
+    'Foot_Right':       'Lower_Leg_Right',
+    'Upper_Leg_Left':   'Pelvis',
+    'Lower_Leg_Left':   'Upper_Leg_Left',
+    'Foot_Left':        'Lower_Leg_Left',
+}
+
+# Topological order for forward kinematics traversal
+CHAIN_ORDER = [
+    'Pelvis', 'Torso',
+    'Shoulder_Right', 'Upper_Arm_Right', 'Lower_Arm_Right', 'Palm_Right',
+    'Shoulder_Left', 'Upper_Arm_Left', 'Lower_Arm_Left', 'Palm_Left',
+    'Upper_Leg_Right', 'Lower_Leg_Right', 'Foot_Right',
+    'Upper_Leg_Left', 'Lower_Leg_Left', 'Foot_Left',
+]
+
+# Skeleton line segments for drawing (pairs of link names to connect)
+SKELETON_SEGMENTS = [
+    # Spine
+    ('Pelvis', 'Torso'),
+    # Right arm
+    ('Torso', 'Shoulder_Right'),
+    ('Shoulder_Right', 'Upper_Arm_Right'),
+    ('Upper_Arm_Right', 'Lower_Arm_Right'),
+    ('Lower_Arm_Right', 'Palm_Right'),
+    # Left arm
+    ('Torso', 'Shoulder_Left'),
+    ('Shoulder_Left', 'Upper_Arm_Left'),
+    ('Upper_Arm_Left', 'Lower_Arm_Left'),
+    ('Lower_Arm_Left', 'Palm_Left'),
+    # Right leg
+    ('Pelvis', 'Upper_Leg_Right'),
+    ('Upper_Leg_Right', 'Lower_Leg_Right'),
+    ('Lower_Leg_Right', 'Foot_Right'),
+    # Left leg
+    ('Pelvis', 'Upper_Leg_Left'),
+    ('Upper_Leg_Left', 'Lower_Leg_Left'),
+    ('Lower_Leg_Left', 'Foot_Left'),
+]
+
+# Colors per body region
+SEGMENT_COLORS = {
+    ('Pelvis', 'Torso'):                  '#FFD700',  # Gold - spine
+    ('Torso', 'Shoulder_Right'):          '#FF6B6B',  # Red - right
+    ('Shoulder_Right', 'Upper_Arm_Right'):'#FF6B6B',
+    ('Upper_Arm_Right', 'Lower_Arm_Right'):'#FF4444',
+    ('Lower_Arm_Right', 'Palm_Right'):    '#CC0000',
+    ('Torso', 'Shoulder_Left'):           '#4ECDC4',  # Teal - left
+    ('Shoulder_Left', 'Upper_Arm_Left'):  '#4ECDC4',
+    ('Upper_Arm_Left', 'Lower_Arm_Left'): '#2EAD9E',
+    ('Lower_Arm_Left', 'Palm_Left'):      '#1A7A6F',
+    ('Pelvis', 'Upper_Leg_Right'):        '#FF8C42',  # Orange - right leg
+    ('Upper_Leg_Right', 'Lower_Leg_Right'):'#E07020',
+    ('Lower_Leg_Right', 'Foot_Right'):    '#C05000',
+    ('Pelvis', 'Upper_Leg_Left'):         '#6C5CE7',  # Purple - left leg
+    ('Upper_Leg_Left', 'Lower_Leg_Left'): '#5A42D0',
+    ('Lower_Leg_Left', 'Foot_Left'):      '#4830B0',
+}
+
+
+def animate_body_3d(link_orientations, step=10, dt=0.01):
     """
-    Creates a 3D Plotly animation of the arm (Upper Arm, Lower Arm, Palm)
-    connected as a kinematic chain. Plays back in real-time speed.
+    Creates a 3D Plotly animation of the full body skeleton.
+    Uses forward kinematics from the Pelvis root through all kinematic chains.
     """
-    if not all(link in link_orientations for link in ['Upper_Arm_Right', 'Lower_Arm_Right', 'Palm_Right']):
-        print("Missing links for full arm animation.")
+    available_links = [link for link in CHAIN_ORDER if link in link_orientations 
+                       and len(link_orientations[link]['quaternions']) > 0]
+    
+    if len(available_links) == 0:
+        print("No links available for animation.")
         return
-        
-    print("Generating 3D animation (this might take a moment)...")
     
-    # Bone lengths (meters)
-    L_upper = 0.30
-    L_lower = 0.25
-    L_palm  = 0.10
+    print(f"Generating full-body 3D animation with {len(available_links)} links...")
+    print(f"  Available: {available_links}")
     
-    # Extract quaternions [w, x, y, z] -> [x, y, z, w] for SciPy
+    # Convert quaternions [w,x,y,z] -> [x,y,z,w] for SciPy
     def convert_quat(q_list):
         return np.array([[q[1], q[2], q[3], q[0]] for q in q_list])
-        
-    q_upper = convert_quat(link_orientations['Upper_Arm_Right']['quaternions'])
-    q_lower = convert_quat(link_orientations['Lower_Arm_Right']['quaternions'])
-    q_palm  = convert_quat(link_orientations['Palm_Right']['quaternions'])
     
-    min_len = min(len(q_upper), len(q_lower), len(q_palm))
+    # Prepare quaternion arrays and bone vectors for each available link
+    quat_arrays = {}
+    bone_vectors_local = {}  # bone vector in the IMU's local frame
+    
+    for link in available_links:
+        quat_arrays[link] = convert_quat(link_orientations[link]['quaternions'])
+        
+        # Bone vector in world frame, transformed to local IMU frame
+        direction = BONE_DIRECTIONS[link]
+        length = BONE_LENGTHS[link]
+        v_world = direction * length
+        
+        R_w2m = link_orientations[link]['R_world_to_master']
+        bone_vectors_local[link] = R_w2m @ v_world
+    
+    # Determine the minimum frame count across all available links
+    min_len = min(len(quat_arrays[link]) for link in available_links)
     indices = np.arange(0, min_len, step)
+    n_frames = len(indices)
     
-    # Assuming Z is against gravity, bone points along -Z in the global A-pose frame
-    v_upper_world = np.array([0, 0, -L_upper])
-    v_lower_world = np.array([0, 0, -L_lower])
-    v_palm_world  = np.array([0, 0, -L_palm])
+    # Pelvis origin height: place pelvis so feet are near ground in A-pose
+    # Approximate: pelvis_z = upper_leg + lower_leg + foot_height
+    pelvis_z = BONE_LENGTHS['Upper_Leg_Right'] + BONE_LENGTHS['Lower_Leg_Right'] + BONE_LENGTHS['Foot_Right'] * 0.3
+    pelvis_origin = np.array([0, 0, pelvis_z])
     
-    # Transform bone vectors to the local IMU frame using their A-pose orientations
-    v_upper = link_orientations['Upper_Arm_Right']['R_world_to_master'] @ v_upper_world
-    v_lower = link_orientations['Lower_Arm_Right']['R_world_to_master'] @ v_lower_world
-    v_palm  = link_orientations['Palm_Right']['R_world_to_master'] @ v_palm_world
+    # Compute joint positions via forward kinematics for each frame
+    # Each link has a 'start' (base) and 'end' (tip) position
+    joint_starts = {link: np.zeros((n_frames, 3)) for link in available_links}
+    joint_ends = {link: np.zeros((n_frames, 3)) for link in available_links}
     
-    p0 = np.zeros((len(indices), 3)) # Shoulder
-    p1 = np.zeros((len(indices), 3)) # Elbow
-    p2 = np.zeros((len(indices), 3)) # Wrist
-    p3 = np.zeros((len(indices), 3)) # Fingertips
+    for fi, idx in enumerate(indices):
+        # Forward kinematics pass
+        for link in CHAIN_ORDER:
+            if link not in available_links:
+                continue
+            
+            parent = KINEMATIC_CHAIN[link]
+            
+            if parent is None:
+                # Root (Pelvis): starts at the pelvis origin
+                joint_starts[link][fi] = pelvis_origin
+            elif parent in available_links:
+                # Start where the parent ends
+                joint_starts[link][fi] = joint_ends[parent][fi]
+            else:
+                # Parent not available; fall back to pelvis
+                joint_starts[link][fi] = pelvis_origin
+            
+            # Apply orientation to bone vector
+            R_mat = R.from_quat(quat_arrays[link][idx]).as_matrix()
+            joint_ends[link][fi] = joint_starts[link][fi] + R_mat @ bone_vectors_local[link]
     
-    for i, idx in enumerate(indices):
-        R_up = R.from_quat(q_upper[idx]).as_matrix()
-        R_low = R.from_quat(q_lower[idx]).as_matrix()
-        R_pa = R.from_quat(q_palm[idx]).as_matrix()
+    # ------------------------------------------------------------------
+    # Build Plotly figure
+    # ------------------------------------------------------------------
+    
+    def build_skeleton_traces(fi):
+        """Build line traces for one frame."""
+        traces = []
+        for seg_idx, (parent_link, child_link) in enumerate(SKELETON_SEGMENTS):
+            if parent_link not in available_links or child_link not in available_links:
+                continue
+            
+            # Connect parent's end to child's end via child's start
+            p_end = joint_ends[parent_link][fi]
+            c_start = joint_starts[child_link][fi]
+            c_end = joint_ends[child_link][fi]
+            
+            color = SEGMENT_COLORS.get((parent_link, child_link), '#888888')
+            
+            traces.append(go.Scatter3d(
+                x=[p_end[0], c_start[0], c_end[0]],
+                y=[p_end[1], c_start[1], c_end[1]],
+                z=[p_end[2], c_start[2], c_end[2]],
+                mode='lines+markers',
+                marker=dict(size=4, color=color),
+                line=dict(color=color, width=6),
+                name=f'{parent_link}→{child_link}',
+                showlegend=(fi == 0),
+            ))
+        return traces
+    
+    # Joint markers for all links (large dots at joint positions)
+    def build_joint_markers(fi):
+        """Build joint marker trace for one frame."""
+        xs, ys, zs, labels = [], [], [], []
+        for link in available_links:
+            # Start joint
+            xs.append(joint_starts[link][fi][0])
+            ys.append(joint_starts[link][fi][1])
+            zs.append(joint_starts[link][fi][2])
+            labels.append(link + ' (start)')
+            # End joint
+            xs.append(joint_ends[link][fi][0])
+            ys.append(joint_ends[link][fi][1])
+            zs.append(joint_ends[link][fi][2])
+            labels.append(link + ' (end)')
         
-        p1[i] = p0[i] + R_up @ v_upper
-        p2[i] = p1[i] + R_low @ v_lower
-        p3[i] = p2[i] + R_pa @ v_palm
-        
-    # Static Body reference (Right Shoulder -> Neck -> Head, Neck -> Pelvis, Neck -> Left Shoulder)
-    torso_x = [0, 0, 0, 0, 0, 0, 0]
-    torso_y = [0, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2]
-    torso_z = [0, 0, 0.2, 0, -0.6, 0, 0]
+        return go.Scatter3d(
+            x=xs, y=ys, z=zs,
+            mode='markers',
+            marker=dict(size=3, color='white', line=dict(width=1, color='black')),
+            text=labels,
+            hoverinfo='text',
+            name='Joints',
+            showlegend=False,
+        )
     
-    torso_trace = go.Scatter3d(
-        x=torso_x, y=torso_y, z=torso_z,
-        mode='lines+markers',
-        marker=dict(size=4, color='gray'),
-        line=dict(color='gray', width=8),
-        name='Static Torso'
-    )
-    
-    # Static Floor
+    # Floor grid
+    floor_z = -0.05
     floor_trace = go.Surface(
-        x=[[-1, 1], [-1, 1]],
-        y=[[-1, -1], [1, 1]],
-        z=[[-0.8, -0.8], [-0.8, -0.8]],
-        colorscale='Greys',
+        x=[[-1.5, 1.5], [-1.5, 1.5]],
+        y=[[-1.5, -1.5], [1.5, 1.5]],
+        z=[[floor_z, floor_z], [floor_z, floor_z]],
+        colorscale=[[0, 'rgba(200,200,200,0.3)'], [1, 'rgba(200,200,200,0.3)']],
         showscale=False,
-        opacity=0.3,
-        name='Floor'
+        opacity=0.2,
+        name='Floor',
+        hoverinfo='skip',
     )
     
-    arm_trace = go.Scatter3d(
-        x=[p0[0,0], p1[0,0], p2[0,0], p3[0,0]],
-        y=[p0[0,1], p1[0,1], p2[0,1], p3[0,1]],
-        z=[p0[0,2], p1[0,2], p2[0,2], p3[0,2]],
-        mode='lines+markers',
-        marker=dict(size=6, color=['black', 'red', 'green', 'blue']),
-        line=dict(color='blue', width=6),
-        name='Right Arm'
-    )
-
-    # Create the Plotly animation
+    # Initial frame traces
+    initial_traces = build_skeleton_traces(0) + [build_joint_markers(0), floor_trace]
+    
+    # Count how many traces are skeleton segments (to know which to update per frame)
+    n_segment_traces = len(build_skeleton_traces(0))
+    # Total animated traces = n_segment_traces + 1 (joint markers)
+    animated_trace_indices = list(range(n_segment_traces + 1))
+    
+    # Build animation frames
+    frames = []
+    for fi in range(n_frames):
+        frame_traces = build_skeleton_traces(fi) + [build_joint_markers(fi)]
+        time_sec = indices[fi] * dt
+        frames.append(go.Frame(
+            data=frame_traces,
+            name=f't={time_sec:.2f}s',
+            traces=animated_trace_indices,
+        ))
+    
+    # Axis range
+    ax_range = 1.2
+    
     fig = go.Figure(
-        data=[arm_trace, torso_trace, floor_trace],
+        data=initial_traces,
         layout=go.Layout(
-            title="3D Arm Kinematics Animation",
+            title="Full-Body 3D Kinematics Animation",
             scene=dict(
-                xaxis=dict(range=[-0.5, 0.5], title='X (m) (Anterior/Posterior)'),
-                yaxis=dict(range=[-0.5, 0.5], title='Y (m) (Lateral/Medial)'),
-                zaxis=dict(range=[-0.8, 0.5], title='Z (m) (Vertical)'),
-                aspectmode='cube'
+                xaxis=dict(range=[-ax_range, ax_range], title='X (m) (Forward)'),
+                yaxis=dict(range=[-ax_range, ax_range], title='Y (m) (Lateral)'),
+                zaxis=dict(range=[-0.2, 2.0], title='Z (m) (Vertical)'),
+                aspectmode='cube',
+                camera=dict(
+                    eye=dict(x=1.5, y=1.5, z=0.8),
+                    up=dict(x=0, y=0, z=1),
+                ),
             ),
             updatemenus=[dict(
                 type="buttons",
-                buttons=[dict(label="Play", method="animate", args=[None, dict(frame=dict(duration=int(step*dt*1000), redraw=True), fromcurrent=True)])]
-            )]
+                showactive=False,
+                y=1.05,
+                x=0.5,
+                xanchor='center',
+                buttons=[
+                    dict(label="▶ Play", method="animate",
+                         args=[None, dict(frame=dict(duration=int(step * dt * 1000), redraw=True),
+                                          fromcurrent=True, transition=dict(duration=0))]),
+                    dict(label="⏸ Pause", method="animate",
+                         args=[[None], dict(frame=dict(duration=0, redraw=False),
+                                            mode='immediate', transition=dict(duration=0))]),
+                ],
+            )],
+            sliders=[dict(
+                active=0,
+                yanchor='top', xanchor='left',
+                currentvalue=dict(prefix='Time: ', visible=True),
+                pad=dict(b=10, t=50),
+                len=0.9, x=0.05,
+                steps=[
+                    dict(args=[[f't={indices[fi]*dt:.2f}s'],
+                               dict(frame=dict(duration=0, redraw=True),
+                                    mode='immediate', transition=dict(duration=0))],
+                         method='animate',
+                         label=f'{indices[fi]*dt:.1f}s')
+                    for fi in range(n_frames)
+                ],
+            )],
         ),
-        frames=[
-            go.Frame(
-                data=[go.Scatter3d(
-                    x=[p0[i,0], p1[i,0], p2[i,0], p3[i,0]],
-                    y=[p0[i,1], p1[i,1], p2[i,1], p3[i,1]],
-                    z=[p0[i,2], p1[i,2], p2[i,2], p3[i,2]]
-                )],
-                name=str(i),
-                traces=[0] # Only update the arm trace (index 0)
-            ) for i in range(len(indices))
-        ]
+        frames=frames,
     )
+    
     fig.show()
 
+
 # =====================================================================
-# Execution & Example Plotting (from user request)
+# Execution & Plotting
 # =====================================================================
 if __name__ == "__main__":
     # Load the specific dataset
@@ -476,44 +713,41 @@ if __name__ == "__main__":
         df = pd.read_csv(df_path)
         print(f"Loaded dataset with shape: {df.shape}")
 
-        link_orientations = process_dataset(df, dt=0.01) # Set your actual dt here
+        link_orientations = process_dataset(df, dt=0.01)
         
-        # Plot EKF Estimation and Variance using Plotly
+        # Plot EKF Quaternion and Variance for each successfully processed link
         for link, data in link_orientations.items():
-            if len(data['quaternions']) > 0:
-                # Plot Quaternions
-                quat_df = pd.DataFrame(data['quaternions'], columns=['W', 'X', 'Y', 'Z'])
-                if 'Timestamp' in df.columns:
-                    quat_df['Timestamp'] = df['Timestamp'].values
-                else:
-                    quat_df['Timestamp'] = np.arange(len(quat_df)) * 0.01
-                    
-                fig_quat = px.line(
-                    quat_df, 
-                    x='Timestamp', 
-                    y=['W', 'X', 'Y', 'Z'], 
-                    title=f'{link} - EKF Estimated Quaternions Over Time (Gimbal Lock Free)'
-                )
-                fig_quat.show()
+            if not data or len(data['quaternions']) == 0:
+                continue
                 
-                # Plot Variance
-                var_df = pd.DataFrame({
-                    'Orientation Variance (Trace)': data['orientation_variance'], 
-                    'Timestamp': quat_df['Timestamp']
-                })
-                fig_var = px.line(
-                    var_df,
-                    x='Timestamp',
-                    y='Orientation Variance (Trace)',
-                    title=f'{link} - EKF Orientation Variance Over Time'
-                )
-                fig_var.show()
-                
-                # Break after plotting the first link to avoid opening too many browser tabs
-                break
-                
-        # Generate 3D Animation
-        animate_arm_3d(link_orientations, step=15) # Downsample to make it faster
+            # Build timestamp column
+            if 'Timestamp' in df.columns:
+                timestamps = df['Timestamp'].values[:len(data['quaternions'])]
+            else:
+                timestamps = np.arange(len(data['quaternions'])) * 0.01
+            
+            # Plot Quaternions
+            quat_df = pd.DataFrame(data['quaternions'], columns=['W', 'X', 'Y', 'Z'])
+            quat_df['Timestamp'] = timestamps
+            fig_quat = px.line(
+                quat_df, x='Timestamp', y=['W', 'X', 'Y', 'Z'],
+                title=f'{link} - EKF Estimated Quaternions Over Time'
+            )
+            fig_quat.show()
+            
+            # Plot Variance
+            var_df = pd.DataFrame({
+                'Orientation Variance (Trace)': data['orientation_variance'],
+                'Timestamp': timestamps
+            })
+            fig_var = px.line(
+                var_df, x='Timestamp', y='Orientation Variance (Trace)',
+                title=f'{link} - EKF Orientation Variance Over Time'
+            )
+            fig_var.show()
+        
+        # Generate Full-Body 3D Animation
+        animate_body_3d(link_orientations, step=15, dt=0.01)
         
     except FileNotFoundError:
         print(f"Could not find dataset at: {df_path}")
