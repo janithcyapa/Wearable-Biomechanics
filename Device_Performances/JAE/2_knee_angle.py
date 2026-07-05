@@ -22,8 +22,8 @@ HP_CUTOFF_HZ = 0.05
 SSA_WINDOW_SECONDS = 4.0
 SSA_TREND_RANK = 1
 
-TARGET_MIN_DEG = 80.0
-TARGET_MAX_DEG = 180.0
+TARGET_MIN_DEG = 0.0    # full knee flexion can approach 0°
+TARGET_MAX_DEG = 180.0  # full extension = ~180°
 
 FORCE_CLIP_TO_RANGE = False
 INIT_SAMPLES_DEFAULT = 50
@@ -37,18 +37,20 @@ RIGHT_KNEE_CFG = {
     "proximal_prefix": "device_4",
     "distal_prefix": "device_7",
 
-    # Extract yaw from relative rotation
+    # Extract PITCH (index=1) from xyz Euler — this is the flexion/extension DOF.
+    # Yaw (index=2) is axial rotation, NOT the flex axis for a knee.
     "euler_seq": "xyz",
-    "euler_index": 2,
+    "euler_index": 1,
 
-    # Flip if direction is wrong
+    # Flip sign if the estimated angle goes the wrong direction during flexion.
+    # Try -1.0 if angles decrease when you expect an increase (and vice-versa).
     "flex_sign": 1.0,
 
-    # Base mapping: angle = base_angle - bend
-    "base_angle": 80.0,
+    # Base mapping: standing knee ≈ 180° (full extension)
+    "base_angle": 180.0,
 
-    "target_min": TARGET_MIN_DEG,
-    "target_max": TARGET_MAX_DEG,
+    "target_min": TARGET_MIN_DEG,  # 0° = full flexion
+    "target_max": TARGET_MAX_DEG,  # 180° = full extension
 
     "init_samples": INIT_SAMPLES_DEFAULT,
 }
