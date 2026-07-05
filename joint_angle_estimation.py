@@ -31,10 +31,16 @@ def exp_so3(omega):
 # =====================================================================
 
 # Map your links to the actual IMU column prefixes
+# link_mapping = {
+#     'Upper_Arm_Right': ['device2_IMU1'],
+#     'Lower_Arm_Right': ['device6_IMU1'],
+#     'Palm_Right': ['device6_IMU3'],
+# }
+
 link_mapping = {
     'Upper_Arm_Right': ['device2_IMU1', 'device2_IMU2'],
     'Lower_Arm_Right': ['device6_IMU1', 'device6_IMU2'],
-    'Palm_Right': ['device3_IMU1'],
+    'Palm_Right': ['device6_IMU3'],
 }
 
 
@@ -122,7 +128,7 @@ def compute_apose_alignments(steady_means, imu_cols):
         # Transformation from local IMU frame to Master link frame
         R_offsets[imu] = R_master.T @ R_initials[imu]
         
-    return R_offsets
+    return R_offsets, R_master
 
 
 # =====================================================================
@@ -130,7 +136,7 @@ def compute_apose_alignments(steady_means, imu_cols):
 # =====================================================================
 
 def multi_imu_iekf_step(R_k, b_k_list, P_k, acc_meas_list, gyr_meas_list, R_offsets, dt, 
-                        Q_static, Q_bias, R_meas_noise, alpha_Q=0.01, Q_threshold=1.0):
+                        Q_static, Q_bias, R_meas_noise, alpha_Q=0.01, Q_threshold=0.5):
     """
     Performs one step of the Multi-IMU Intrinsic EKF.
     
@@ -194,14 +200,19 @@ def multi_imu_iekf_step(R_k, b_k_list, P_k, acc_meas_list, gyr_meas_list, R_offs
     Z_hat = np.zeros(3*N)
     H = np.zeros((3*N, state_dim))
     
+    # Measurement Noise Matrix
+    R_mat = np.zeros((3*N, 3*N))
+    
     for i in range(N):
+        acc_raw = acc_meas_list[i]
+        acc_raw_norm = np.linalg.norm(acc_raw)
+        
         # Rotate local accel measurement to Master link frame
-        acc_master = R_offsets[i] @ acc_meas_list[i]
+        acc_master = R_offsets[i] @ acc_raw
         
         # Normalize (assuming measurement is pure gravity direction)
-        acc_norm = np.linalg.norm(acc_master)
-        if acc_norm > 1e-5:
-            acc_master /= acc_norm
+        if acc_raw_norm > 1e-5:
+            acc_master /= acc_raw_norm
             
         Z_meas[3*i : 3*i+3] = acc_master
         
@@ -211,13 +222,16 @@ def multi_imu_iekf_step(R_k, b_k_list, P_k, acc_meas_list, gyr_meas_list, R_offs
         
         # Observation Jacobian (d(R^T g) / d(theta) = hat(R^T g))
         H[3*i : 3*i+3, 0:3] = hat(z_hat_i)
-        # H wrt biases is zero
+        
+        # Motion Artifact Rejection (Gating)
+        g_local = 9.81
+        motion_penalty = (acc_raw_norm - g_local)**2
+        k_penalty = 10.0 # Tune this to punish deviations from 1g
+        R_meas_noise_i = R_meas_noise * (1 + k_penalty * motion_penalty)
+        R_mat[3*i : 3*i+3, 3*i : 3*i+3] = np.eye(3) * R_meas_noise_i
         
     # Innovation
     innov = Z_meas - Z_hat
-    
-    # Measurement Noise
-    R_mat = np.eye(3*N) * R_meas_noise
     
     # Kalman Gain
     S = H @ P_kp1_k @ H.T + R_mat
@@ -256,8 +270,14 @@ def process_dataset(df, dt=0.01):
     Q_bias = 1e-7 * np.eye(3)        # Bias random walk
     R_meas_noise = 0.05              # Accel measurement noise variance
     
-    # Filter the df to only process rows that have the necessary columns
-    # We assume 'df' has been loaded and cleaned prior to this.
+    # Find a single GLOBAL steady state for all used IMUs to ensure a shared reference frame
+    all_imus = [imu for imus in link_mapping.values() for imu in imus]
+    try:
+        global_steady_means, start_idx, end_idx = find_steady_state(df, all_imus)
+        print(f"Global steady state region identified: indices {start_idx} to {end_idx}")
+    except ValueError as e:
+        print(f"Failed to find global steady state: {e}")
+        return {}
     
     for link, imus in link_mapping.items():
         print(f"Processing Link: {link} with IMUs {imus}")
@@ -270,24 +290,24 @@ def process_dataset(df, dt=0.01):
             
         N = len(imus)
         
-        # 1. Automated Steady State & Alignment
-        try:
-            steady_means, _, _ = find_steady_state(df, imus)
-        except ValueError as e:
-            print(f"  -> Skipping {link} due to error: {e}")
-            continue
+        # 1. Alignment to Global Reference
+        R_offsets_dict, R_world_to_master = compute_apose_alignments(global_steady_means, imus)
+        print(f"  -> Rotation offsets:")
+        for imu_name, r_off in R_offsets_dict.items():
+            print(f"       {imu_name}:\n{r_off}")
             
-        R_offsets_dict = compute_apose_alignments(steady_means, imus)
         R_offsets = [R_offsets_dict[imu] for imu in imus]
         
-        # 2. Initialize EKF State
-        R_k = np.eye(3) 
-        b_k_list = [steady_means[imu]['gyr_mean'] for imu in imus] # Initialize bias from steady state
+        # 2. Initialize EKF State (R_k tracks Master IMU to World)
+        R_k = R_world_to_master.T.copy() 
+        b_k_list = [global_steady_means[imu]['gyr_mean'] for imu in imus] # Initialize bias from steady state
         
         state_dim = 3 + 3*N
         P_k = np.eye(state_dim) * 0.1
         
         link_rotations = []
+        link_euler = []
+        link_variance = []
         
         # 3. Time Loop
         for index, row in df.iterrows():
@@ -299,7 +319,8 @@ def process_dataset(df, dt=0.01):
                 gyr_cols = [f'{imu}_GX', f'{imu}_GY', f'{imu}_GZ']
                 
                 acc_meas_list.append(row[acc_cols].values.astype(float))
-                gyr_meas_list.append(row[gyr_cols].values.astype(float))
+                # Convert Gyro from degrees/sec to radians/sec
+                gyr_meas_list.append(row[gyr_cols].values.astype(float) * (np.pi / 180.0))
                 
             # EKF Step
             R_k, b_k_list, P_k = multi_imu_iekf_step(
@@ -312,12 +333,138 @@ def process_dataset(df, dt=0.01):
             r = R.from_matrix(R_k)
             quat = r.as_quat() # SciPy format: [x, y, z, w]
             link_rotations.append([quat[3], quat[0], quat[1], quat[2]]) # reorder to [w, x, y, z]
+            link_euler.append(r.as_euler('xyz', degrees=True))
+            link_variance.append(np.trace(P_k[:3, :3]))
             
-        link_orientations[link] = link_rotations
+        link_orientations[link] = {
+            'quaternions': link_rotations,
+            'euler_angles': link_euler,
+            'orientation_variance': link_variance,
+            'R_world_to_master': R_world_to_master
+        }
         print(f"  -> Successfully processed {len(link_rotations)} frames for {link}.")
         
     return link_orientations
 
+
+# =====================================================================
+# 5. 3D Kinematics Animation
+# =====================================================================
+
+def animate_arm_3d(link_orientations, step=10, dt=0.01):
+    """
+    Creates a 3D Plotly animation of the arm (Upper Arm, Lower Arm, Palm)
+    connected as a kinematic chain. Plays back in real-time speed.
+    """
+    if not all(link in link_orientations for link in ['Upper_Arm_Right', 'Lower_Arm_Right', 'Palm_Right']):
+        print("Missing links for full arm animation.")
+        return
+        
+    print("Generating 3D animation (this might take a moment)...")
+    
+    # Bone lengths (meters)
+    L_upper = 0.30
+    L_lower = 0.25
+    L_palm  = 0.10
+    
+    # Extract quaternions [w, x, y, z] -> [x, y, z, w] for SciPy
+    def convert_quat(q_list):
+        return np.array([[q[1], q[2], q[3], q[0]] for q in q_list])
+        
+    q_upper = convert_quat(link_orientations['Upper_Arm_Right']['quaternions'])
+    q_lower = convert_quat(link_orientations['Lower_Arm_Right']['quaternions'])
+    q_palm  = convert_quat(link_orientations['Palm_Right']['quaternions'])
+    
+    min_len = min(len(q_upper), len(q_lower), len(q_palm))
+    indices = np.arange(0, min_len, step)
+    
+    # Assuming Z is against gravity, bone points along -Z in the global A-pose frame
+    v_upper_world = np.array([0, 0, -L_upper])
+    v_lower_world = np.array([0, 0, -L_lower])
+    v_palm_world  = np.array([0, 0, -L_palm])
+    
+    # Transform bone vectors to the local IMU frame using their A-pose orientations
+    v_upper = link_orientations['Upper_Arm_Right']['R_world_to_master'] @ v_upper_world
+    v_lower = link_orientations['Lower_Arm_Right']['R_world_to_master'] @ v_lower_world
+    v_palm  = link_orientations['Palm_Right']['R_world_to_master'] @ v_palm_world
+    
+    p0 = np.zeros((len(indices), 3)) # Shoulder
+    p1 = np.zeros((len(indices), 3)) # Elbow
+    p2 = np.zeros((len(indices), 3)) # Wrist
+    p3 = np.zeros((len(indices), 3)) # Fingertips
+    
+    for i, idx in enumerate(indices):
+        R_up = R.from_quat(q_upper[idx]).as_matrix()
+        R_low = R.from_quat(q_lower[idx]).as_matrix()
+        R_pa = R.from_quat(q_palm[idx]).as_matrix()
+        
+        p1[i] = p0[i] + R_up @ v_upper
+        p2[i] = p1[i] + R_low @ v_lower
+        p3[i] = p2[i] + R_pa @ v_palm
+        
+    # Static Body reference (Right Shoulder -> Neck -> Head, Neck -> Pelvis, Neck -> Left Shoulder)
+    torso_x = [0, 0, 0, 0, 0, 0, 0]
+    torso_y = [0, 0.2, 0.2, 0.2, 0.2, 0.4, 0.2]
+    torso_z = [0, 0, 0.2, 0, -0.6, 0, 0]
+    
+    torso_trace = go.Scatter3d(
+        x=torso_x, y=torso_y, z=torso_z,
+        mode='lines+markers',
+        marker=dict(size=4, color='gray'),
+        line=dict(color='gray', width=8),
+        name='Static Torso'
+    )
+    
+    # Static Floor
+    floor_trace = go.Surface(
+        x=[[-1, 1], [-1, 1]],
+        y=[[-1, -1], [1, 1]],
+        z=[[-0.8, -0.8], [-0.8, -0.8]],
+        colorscale='Greys',
+        showscale=False,
+        opacity=0.3,
+        name='Floor'
+    )
+    
+    arm_trace = go.Scatter3d(
+        x=[p0[0,0], p1[0,0], p2[0,0], p3[0,0]],
+        y=[p0[0,1], p1[0,1], p2[0,1], p3[0,1]],
+        z=[p0[0,2], p1[0,2], p2[0,2], p3[0,2]],
+        mode='lines+markers',
+        marker=dict(size=6, color=['black', 'red', 'green', 'blue']),
+        line=dict(color='blue', width=6),
+        name='Right Arm'
+    )
+
+    # Create the Plotly animation
+    fig = go.Figure(
+        data=[arm_trace, torso_trace, floor_trace],
+        layout=go.Layout(
+            title="3D Arm Kinematics Animation",
+            scene=dict(
+                xaxis=dict(range=[-0.5, 0.5], title='X (m) (Anterior/Posterior)'),
+                yaxis=dict(range=[-0.5, 0.5], title='Y (m) (Lateral/Medial)'),
+                zaxis=dict(range=[-0.8, 0.5], title='Z (m) (Vertical)'),
+                aspectmode='cube'
+            ),
+            updatemenus=[dict(
+                type="buttons",
+                buttons=[dict(label="Play", method="animate", args=[None, dict(frame=dict(duration=int(step*dt*1000), redraw=True), fromcurrent=True)])]
+            )]
+        ),
+        frames=[
+            go.Frame(
+                data=[go.Scatter3d(
+                    x=[p0[i,0], p1[i,0], p2[i,0], p3[i,0]],
+                    y=[p0[i,1], p1[i,1], p2[i,1], p3[i,1]],
+                    z=[p0[i,2], p1[i,2], p2[i,2], p3[i,2]]
+                )],
+                name=str(i),
+                traces=[0] # Only update the arm trace (index 0)
+            ) for i in range(len(indices))
+        ]
+    )
+    fig.show()
 
 # =====================================================================
 # Execution & Example Plotting (from user request)
@@ -328,22 +475,45 @@ if __name__ == "__main__":
     try:
         df = pd.read_csv(df_path)
         print(f"Loaded dataset with shape: {df.shape}")
-        
-        # Your example Plotly figure
-        # if all(col in df.columns for col in ['device1_IMU1_AX','device1_IMU1_AY','device1_IMU1_AZ', 'Timestamp']):
-        #     fig = px.line(
-        #         df, 
-        #         x='Timestamp', 
-        #         y=['device1_IMU1_AX','device1_IMU1_AY','device1_IMU1_AZ'], 
-        #         title='Device 1 IMU Accelerometer Data Over Time'
-        #     )
-        #     # fig.show()  # Uncomment this to render the plot in your IDE/Notebook
-        # else:
-        #     print("Columns for Plotly example were not found in the dataset.")
-            
-        # Run the full pipeline
+
         link_orientations = process_dataset(df, dt=0.01) # Set your actual dt here
-        # Example to access data: df_upper_arm_right = pd.DataFrame(link_orientations['Upper_Arm_Right'], columns=['qw', 'qx', 'qy', 'qz'])
+        
+        # Plot EKF Estimation and Variance using Plotly
+        for link, data in link_orientations.items():
+            if len(data['quaternions']) > 0:
+                # Plot Quaternions
+                quat_df = pd.DataFrame(data['quaternions'], columns=['W', 'X', 'Y', 'Z'])
+                if 'Timestamp' in df.columns:
+                    quat_df['Timestamp'] = df['Timestamp'].values
+                else:
+                    quat_df['Timestamp'] = np.arange(len(quat_df)) * 0.01
+                    
+                fig_quat = px.line(
+                    quat_df, 
+                    x='Timestamp', 
+                    y=['W', 'X', 'Y', 'Z'], 
+                    title=f'{link} - EKF Estimated Quaternions Over Time (Gimbal Lock Free)'
+                )
+                fig_quat.show()
+                
+                # Plot Variance
+                var_df = pd.DataFrame({
+                    'Orientation Variance (Trace)': data['orientation_variance'], 
+                    'Timestamp': quat_df['Timestamp']
+                })
+                fig_var = px.line(
+                    var_df,
+                    x='Timestamp',
+                    y='Orientation Variance (Trace)',
+                    title=f'{link} - EKF Orientation Variance Over Time'
+                )
+                fig_var.show()
+                
+                # Break after plotting the first link to avoid opening too many browser tabs
+                break
+                
+        # Generate 3D Animation
+        animate_arm_3d(link_orientations, step=15) # Downsample to make it faster
         
     except FileNotFoundError:
         print(f"Could not find dataset at: {df_path}")
