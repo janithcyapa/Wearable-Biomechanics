@@ -5,10 +5,8 @@ from scipy.spatial.transform import Rotation as R
 from scipy.signal import butter, filtfilt
 import os
 
-import kalman as kl
 import settings as sts
 
-# =============================================================================
 # Right knee angle (Device 1 = proximal/thigh, Device 10 = distal/shank)
 # Pipeline:
 #   IKF orientation -> relative rotation -> Euler yaw (xyz, index=2)
@@ -115,60 +113,14 @@ def _is_valid_rotation(C, tol_ortho=1e-2, tol_det=1e-1):
 
 
 def run_adaptive_filter(accel_data, gyro_data, dt):
-    q_current = np.array([[1.0], [0.0], [0.0], [0.0]])
-    P_current = np.eye(6) * 0.1
-    b_current = np.zeros((3, 1))
-    omega_hat_prev = np.zeros((3, 1))
-
-    init_gravity_vector, _ = _nearest_valid_init_gravity(accel_data)
-
-    R_list = []
-    C_prev = np.eye(3)
-
-    for i in range(len(accel_data)):
-        acc_meas = np.asarray(accel_data[i], dtype=float).reshape(3, 1)
-        gyr_meas = np.asarray(gyro_data[i], dtype=float).reshape(3, 1)
-
-        if (not np.all(np.isfinite(acc_meas))) or (np.linalg.norm(acc_meas) < 1e-8):
-            acc_meas = init_gravity_vector
-
-        q_current = as_col(q_current, 4)
-        b_current = as_col(b_current, 3)
-        omega_hat_prev = as_col(omega_hat_prev, 3)
-
-        result = kl.ikf_step(
-            P_k_k=P_current,
-            dt=dt,
-            omega_m_kp1=gyr_meas,
-            acc_r=acc_meas,
-            q_hat_k_k=q_current,
-            b_hat_k_k=b_current,
-            sigma_r=sts.sigma_omega_r_c,
-            sigma_b=sts.sigma_omega_w_c,
-            omega_hat_k_k=omega_hat_prev,
-            init_gravity_vector=init_gravity_vector,
-        )
-
-        P_current = result.P_kp1_kp1
-        q_current = as_col(result.q_kp1_kp1, 4)
-        b_current = as_col(result.b_hat_kp1_kp1, 3)
-        omega_hat_prev = as_col(result.omega_kp1_kp1, 3)
-
-        C = np.asarray(result.C_kp1, dtype=float)
-
-        if C.shape == (3, 3) and np.all(np.isfinite(C)):
-            C = _orthonormalize_R(C)
-
-        if not _is_valid_rotation(C):
-            if DEBUG_BAD_ROTATIONS:
-                det = np.linalg.det(C) if (C.shape == (3, 3) and np.all(np.isfinite(C))) else None
-                print(f"[IKF] invalid C at i={i}, det={det}; using previous valid rotation.")
-            C = C_prev
-        else:
-            C_prev = C
-
-        R_list.append(C)
-
+    from ikf import IKF
+    
+    ikf = IKF(dt=dt)
+    
+    # IKF internally uses scipy.spatial.transform.Rotation,
+    # which guarantees valid rotation matrices inherently.
+    R_list = ikf.process(accel_data, gyro_data)
+    
     return R_list
 
 

@@ -136,10 +136,9 @@ def ikf_step(P_k_k, dt, omega_m_kp1, acc_r, q_hat_k_k, b_hat_k_k, sigma_r, sigma
     # Phi_kp1 = geo.mat_exp(Fc*dt)
     # Phi_kp1 = Fc*dt
     # Phi_kp1 = Fc*dt + 0.5*(Fc*dt)@(Fc*dt)
-    Phi_kp1 = geo.mat_exp(Fc*dt) - geo.eye6 # TODO: Why eye6?
-
+    Phi_kp1 = geo.mat_exp(Fc*dt)
     # Compute discrete-time process noise covariance matrix
-    Qd_k = Phi_kp1 @ Gc @ Qc @ Gc.transpose() @ Phi_kp1.transpose() * dt
+    Qd_k = Gc @ Qc @ Gc.T * dt
 
     # Test if the approximation is correct
     # deltaQd = Qd_k - Qd_k_

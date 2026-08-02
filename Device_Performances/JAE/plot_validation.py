@@ -74,12 +74,33 @@ fig = make_subplots(
     shared_xaxes=True,
     vertical_spacing=0.06,
     subplot_titles=[
+        "Device 4 — Raw Acceleration  (AX · AY · AZ)",
         "Device 7 — Raw Acceleration  (AX · AY · AZ)",
         "Joint Angle Estimation  (HPF  &  Kalman)",
         "QArm Reference  (Target °  &  Actual Elbow °)",
     ],
     row_heights=[0.32, 0.34, 0.34],
 )
+# ── row 1 · Device 7 acceleration ─────────────────────────────────────────────
+for col, color, label in [
+    ("device4_IMU1_AX", C["ax"], "AX (m/s²)"),
+    ("device4_IMU1_AY", C["ay"], "AY (m/s²)"),
+    ("device4_IMU1_AZ", C["az"], "AZ (m/s²)"),
+]:
+    fig.add_trace(
+        go.Scattergl(
+            x=raw_ds["t_sec"],
+            y=raw_ds[col],
+            mode="lines",
+            name=label,
+            line=dict(color=color, width=1.2),
+            legendgroup="accel",
+            legendgrouptitle_text="Acceleration" if col == "device7_IMU1_AX" else None,
+            hovertemplate=f"<b>{label}</b><br>t=%{{x:.2f}} s<br>val=%{{y:.3f}}<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+
 
 # ── row 1 · Device 7 acceleration ─────────────────────────────────────────────
 for col, color, label in [
@@ -98,7 +119,7 @@ for col, color, label in [
             legendgrouptitle_text="Acceleration" if col == "device7_IMU1_AX" else None,
             hovertemplate=f"<b>{label}</b><br>t=%{{x:.2f}} s<br>val=%{{y:.3f}}<extra></extra>",
         ),
-        row=1, col=1,
+        row=2, col=1,
     )
 
 # ── row 2 · Angle estimation ──────────────────────────────────────────────────
@@ -117,7 +138,7 @@ for col, color, label in [
             legendgrouptitle_text="Angle Estimation" if col == "knee_angle_hpf" else None,
             hovertemplate=f"<b>{label}</b><br>t=%{{x:.2f}} s<br>angle=%{{y:.2f}}°<extra></extra>",
         ),
-        row=2, col=1,
+        row=3, col=1,
     )
 
 # ── row 3 · QArm reference ────────────────────────────────────────────────────
@@ -146,7 +167,7 @@ fig.add_trace(
         legendgroup="qarm",
         hovertemplate="<b>Elbow</b><br>t=%{x:.2f} s<br>angle=%{y:.2f}°<extra></extra>",
     ),
-    row=3, col=1,
+    row=4, col=1,
 )
 
 # ── shade Test_Phase regions on row 3 ─────────────────────────────────────────
