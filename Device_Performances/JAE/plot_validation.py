@@ -22,7 +22,7 @@ from plotly.subplots import make_subplots
 
 # ── paths ──────────────────────────────────────────────────────────────────────
 RAW_FILE   = "entry_0001_none_1781856275.csv"
-ANGLE_FILE = "Angle_estimation_2.csv"
+ANGLE_FILE = "right_knee_angles_hpf.csv"
 QARM_FILE  = "qarm_imu_validation_data.csv"
 
 # ── tuneable offset ────────────────────────────────────────────────────────────
@@ -68,9 +68,9 @@ C = {
 
 FONT = "Inter, system-ui, sans-serif"
 
-# ── build figure (3 rows) ──────────────────────────────────────────────────────
+# ── build figure (4 rows) ──────────────────────────────────────────────────────
 fig = make_subplots(
-    rows=3, cols=1,
+    rows=4, cols=1,
     shared_xaxes=True,
     vertical_spacing=0.06,
     subplot_titles=[
@@ -79,13 +79,13 @@ fig = make_subplots(
         "Joint Angle Estimation  (HPF  &  Kalman)",
         "QArm Reference  (Target °  &  Actual Elbow °)",
     ],
-    row_heights=[0.32, 0.34, 0.34],
+    row_heights=[0.25, 0.25, 0.25, 0.25],
 )
 # ── row 1 · Device 7 acceleration ─────────────────────────────────────────────
 for col, color, label in [
-    ("device4_IMU1_AX", C["ax"], "AX (m/s²)"),
-    ("device4_IMU1_AY", C["ay"], "AY (m/s²)"),
-    ("device4_IMU1_AZ", C["az"], "AZ (m/s²)"),
+    ("device4_IMU2_AX", C["ax"], "AX (m/s²)"),
+    ("device4_IMU2_AY", C["ay"], "AY (m/s²)"),
+    ("device4_IMU2_AZ", C["az"], "AZ (m/s²)"),
 ]:
     fig.add_trace(
         go.Scattergl(
@@ -141,7 +141,7 @@ for col, color, label in [
         row=3, col=1,
     )
 
-# ── row 3 · QArm reference ────────────────────────────────────────────────────
+# ── row 4 · QArm reference ────────────────────────────────────────────────────
 fig.add_trace(
     go.Scatter(
         x=qarm["t_rel"],
@@ -154,7 +154,7 @@ fig.add_trace(
         legendgrouptitle_text="QArm Reference",
         hovertemplate="<b>Target</b><br>t=%{x:.2f} s<br>angle=%{y:.2f}°<extra></extra>",
     ),
-    row=3, col=1,
+    row=4, col=1,
 )
 fig.add_trace(
     go.Scatter(
@@ -170,7 +170,7 @@ fig.add_trace(
     row=4, col=1,
 )
 
-# ── shade Test_Phase regions on row 3 ─────────────────────────────────────────
+# ── shade Test_Phase regions on row 4 ─────────────────────────────────────────
 phase_colors = {
     "START":        "rgba(255, 200,  60, 0.12)",
     "SWEEP_10.0DEG":"rgba( 99, 210, 255, 0.10)",
@@ -196,7 +196,7 @@ for idx, row in qarm.iterrows():
             x0=seg_start, x1=row["t_rel"],
             fillcolor=color, opacity=1,
             layer="below", line_width=0,
-            row=3, col=1,
+            row=4, col=1,
             annotation_text=prev_phase if prev_phase not in added_shapes else "",
             annotation_position="top left",
             annotation_font=dict(size=8, color="rgba(200,200,200,0.7)"),
@@ -212,19 +212,21 @@ if prev_phase:
         x0=seg_start, x1=qarm["t_rel"].iloc[-1],
         fillcolor=color, opacity=1,
         layer="below", line_width=0,
-        row=3, col=1,
+        row=4, col=1,
     )
 
 # ── axis labels ───────────────────────────────────────────────────────────────
 fig.update_yaxes(title_text="Acceleration (m/s²)", row=1, col=1,
                  gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.15)")
-fig.update_yaxes(title_text="Angle (°)", row=2, col=1,
+fig.update_yaxes(title_text="Acceleration (m/s²)", row=2, col=1,
                  gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.15)")
 fig.update_yaxes(title_text="Angle (°)", row=3, col=1,
                  gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.15)")
-fig.update_xaxes(title_text="Relative Time (s)", row=3, col=1,
+fig.update_yaxes(title_text="Angle (°)", row=4, col=1,
                  gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.15)")
-for r in [1, 2]:
+fig.update_xaxes(title_text="Relative Time (s)", row=4, col=1,
+                 gridcolor="rgba(255,255,255,0.06)", zerolinecolor="rgba(255,255,255,0.15)")
+for r in [1, 2, 3]:
     fig.update_xaxes(gridcolor="rgba(255,255,255,0.06)", row=r, col=1)
 
 # ── layout ────────────────────────────────────────────────────────────────────
@@ -255,7 +257,7 @@ fig.update_layout(
     height=900,
     margin=dict(l=70, r=30, t=110, b=60),
     # Range slider on bottom x axis
-    xaxis3=dict(
+    xaxis4=dict(
         rangeslider=dict(
             visible=True,
             bgcolor="#1e293b",
