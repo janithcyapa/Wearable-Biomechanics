@@ -20,7 +20,7 @@ This project implements an integrated wearable biomechanics system that unifies 
 
 ## Processing Pipeline & Notebooks
 
-This repository includes a robust data processing pipeline consisting of three primary Jupyter notebooks. Each step is fully documented in the `Docs/` directory.
+This repository includes a robust data processing pipeline consisting of four primary Jupyter notebooks. Each step is fully documented in the `Docs/` directory.
 
 ### 1. Dataset Manager (`01. Dataset Manager.ipynb`)
 
@@ -49,3 +49,12 @@ This pipeline converts two unsynchronized RGB videos (front and side views) into
 * **Bayesian MAP 3-D Pose Fusion:** Solves for 3-D coordinates and global bone lengths iteratively via Batch EM. The objective function minimizes weighted reprojection error while enforcing an anatomical bone-length prior and temporal smoothness.
 * **Robust Optimization:** Uses `scipy.optimize.least_squares` with robust loss and sparse Jacobians to handle missing and noisy YOLO detections efficiently.
 * **Further details:** Refer to [Docs/03. Video Sync &amp; 3‑D Pose Estimation.md](<Docs/03.%20Video%20Sync%20&%203%E2%80%91D%20Pose%20Estimation.md>)
+
+### 4. Dataset Summary & Paper Auditor (`04. Dataset Summary.ipynb`)
+
+This pipeline executes an exhaustive audit and data profiling of the entire dataset to generate publication-ready descriptors (for *Nature Scientific Data*, *Elsevier Data in Brief*, or *Sports Biomechanics*).
+
+* **Multi-Modal Verification:** Audits IMU time-series integrity (sample rate, NaNs, dead channels), 10-node sensor network availability (Devices 1..10, 6-DoF validation), and synchronized front/side video coverage.
+* **Cohort Profiling:** Aggregates participant demographics, anthropometrics, BMI, and lifting experience.
+* **Publication Deliverables:** Produces a master Markdown paper companion, audit spreadsheets (`experiments_detailed_audit.csv`, `subjects_summary.csv`, `sensor_completeness_matrix.csv`), JSON metadata, and an automated 1-click ZIP package with Google Drive backup support.
+
