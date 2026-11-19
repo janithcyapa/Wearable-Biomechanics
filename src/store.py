@@ -32,8 +32,7 @@ def display_table(
         print("No records found.")
         return
 
-    view_df = df.copy()
     if clean_columns:
-        view_df.columns = [str(c).replace("_", " ").title() for c in view_df.columns]
+        df.columns = [str(c).replace("_", " ").title() for c in df.columns]
 
-    display(view_df)
+    display(df)
