@@ -12,8 +12,10 @@ from .loader import (
     load_summary_tables,
 )
 from .paper_figures import (
+    build_imu_quality_table,
     build_paper_tables,
     plot_fig4_annotation_scheme,
+    plot_imu_validation_figure,
 )
 from .plots import (
     plot_cohort_overview,
@@ -26,6 +28,7 @@ from .plots import (
 __all__ = [
     "DEFAULT_CLEAN_DATASET_DIR",
     "JOINT_SENSOR_PAIRS",
+    "build_imu_quality_table",
     "build_paper_tables",
     "detect_set_faults",
     "launch_fault_logger",
@@ -33,6 +36,7 @@ __all__ = [
     "load_summary_tables",
     "plot_cohort_overview",
     "plot_fig4_annotation_scheme",
+    "plot_imu_validation_figure",
     "plot_joint_4panel",
     "plot_marker_agreement_summary",
     "plot_sensor_health_overview",

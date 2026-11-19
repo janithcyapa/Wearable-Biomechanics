@@ -281,3 +281,255 @@ def plot_fig4_annotation_scheme(
     _pub_axes(fig, rows=n_rows, cols=1)
     fig.update_xaxes(title_text="Time (s)", row=n_rows, col=1)
     return fig
+
+
+def _static_window_mask(sd: dict) -> np.ndarray:
+    """Return boolean mask of static (pre_rest / post_rest) samples for a Set."""
+    n = len(sd["time_s"])
+    mask = np.zeros(n, dtype=bool)
+    cons = sd["consensus_df"]
+    if not cons.empty:
+        for _, grp in cons.groupby("lift_id"):
+            m_dict = dict(zip(grp["marker_name"], grp["imu_idx"]))
+            if "start" in m_dict and "setup" in m_dict:
+                s, e = int(m_dict["start"]), int(m_dict["setup"])
+                if e > s + 10:
+                    mask[s:e] = True
+            if "post_rest" in m_dict and "end" in m_dict:
+                s, e = int(m_dict["post_rest"]), int(m_dict["end"])
+                if e > s + 10:
+                    mask[s:e] = True
+    if not np.any(mask):
+        mask[: min(100, n)] = True
+    return mask
+
+
+def _compute_dataset_imu_metrics(dataset_dir: str | Path) -> dict:
+    """Compute per-(set, sensor) quality metrics across all 54 Sets x 26 IMUs."""
+    tables = load_summary_tables(dataset_dir)
+    set_ids = sorted(tables["sets"]["set_id"].tolist())
+
+    records: list[dict] = []
+    completeness_matrix: list[list[float]] = []
+    sensor_names: list[str] | None = None
+    set_lags_ms: list[float] = []
+
+    for sid in set_ids:
+        sd = load_set_h5(dataset_dir, sid)
+        if sensor_names is None:
+            sensor_names = sd["sensors"]
+
+        acc = sd["accel"]
+        gyr = sd["gyro"]
+        fs = float(sd["metadata"].get("imu_fs_hz", 100.0))
+        static_mask = _static_window_mask(sd)
+        n = acc.shape[0]
+        row_comp: list[float] = []
+
+        # Reference spine dynamic accel magnitude for inter-IMU sync lag
+        us_idx = sensor_names.index("US") if "US" in sensor_names else 0
+        us_acc = acc[:, us_idx, :]
+        us_ok = not np.all(np.isnan(us_acc)) and not any(np.nanstd(us_acc[:, j]) == 0 for j in range(3))
+        if us_ok:
+            us_mag = np.linalg.norm(pd.DataFrame(us_acc).ffill().bfill().fillna(0.0).to_numpy(), axis=1)
+            us_dyn = us_mag - np.median(us_mag)
+            us_dyn = (us_dyn - np.mean(us_dyn)) / (np.std(us_dyn) + 1e-8)
+
+        for s_idx, code in enumerate(sensor_names):
+            a_sl = acc[:, s_idx, :]
+            g_sl = gyr[:, s_idx, :]
+
+            valid_mask = (~np.any(np.isnan(a_sl), axis=1)) & (~np.any(np.isnan(g_sl), axis=1))
+            if np.any(valid_mask) and (
+                any(np.nanstd(a_sl[:, j]) == 0 for j in range(3))
+                or any(np.nanstd(g_sl[:, j]) == 0 for j in range(3))
+            ):
+                comp_pct = 0.0
+            else:
+                comp_pct = float(valid_mask.mean() * 100.0) if n else 0.0
+            row_comp.append(comp_pct)
+
+            missing_pct = 100.0 - comp_pct
+            acc_clip_pct = float((np.abs(a_sl) > 80.0).any(axis=1).mean() * 100.0) if n else 0.0
+            gyr_clip_pct = float((np.abs(g_sl) > 2000.0).any(axis=1).mean() * 100.0) if n else 0.0
+
+            static_acc_norm = np.nan
+            static_gyr_bias = np.nan
+            if comp_pct > 50.0:
+                a_stat = a_sl[static_mask]
+                g_stat = g_sl[static_mask]
+                a_mags = np.linalg.norm(a_stat, axis=1)
+                a_mags = a_mags[~np.isnan(a_mags)]
+                if len(a_mags):
+                    static_acc_norm = float(np.mean(a_mags))
+                g_mags = np.linalg.norm(g_stat, axis=1)
+                g_mags = g_mags[~np.isnan(g_mags)]
+                if len(g_mags):
+                    static_gyr_bias = float(np.mean(g_mags))
+
+                # Inter-IMU lag vs US (ms) within ±200 ms window
+                if us_ok and code != "US":
+                    s_mag = np.linalg.norm(pd.DataFrame(a_sl).ffill().bfill().fillna(0.0).to_numpy(), axis=1)
+                    s_dyn = s_mag - np.median(s_mag)
+                    s_dyn = (s_dyn - np.mean(s_dyn)) / (np.std(s_dyn) + 1e-8)
+                    max_lag = int(round(0.2 * fs))
+                    corr = np.correlate(us_dyn, s_dyn, mode="full")
+                    mid = len(us_dyn) - 1
+                    win = corr[mid - max_lag : mid + max_lag + 1]
+                    lag_samples = int(np.argmax(win) - max_lag)
+                    set_lags_ms.append(lag_samples * (1000.0 / fs))
+
+            records.append(
+                {
+                    "set_id": sid,
+                    "sensor_code": code,
+                    "completeness_pct": comp_pct,
+                    "missing_pct": missing_pct,
+                    "static_acc_norm": static_acc_norm,
+                    "static_gyr_bias": static_gyr_bias,
+                    "acc_clip_pct": acc_clip_pct,
+                    "gyr_clip_pct": gyr_clip_pct,
+                }
+            )
+        completeness_matrix.append(row_comp)
+
+    return {
+        "df": pd.DataFrame(records),
+        "set_ids": set_ids,
+        "sensor_names": sensor_names or [],
+        "completeness_matrix": completeness_matrix,
+        "lags_ms": np.array(set_lags_ms, dtype=float),
+    }
+
+
+def build_imu_quality_table(dataset_dir: str | Path) -> pd.DataFrame:
+    """Option 1: Summary quality table across all 1,404 (54 Sets x 26 IMUs) recordings."""
+    data = _compute_dataset_imu_metrics(dataset_dir)
+    df = data["df"]
+    lags = np.abs(data["lags_ms"])
+
+    def _summarize(series: pd.Series | np.ndarray, threshold_lbl: str, pass_fn, name: str) -> dict:
+        arr = pd.Series(series).dropna()
+        if arr.empty:
+            return {"Metric": name, "Expected / Threshold": threshold_lbl, "Mean ± SD": "NA", "Median [IQR]": "NA", "Min – Max": "NA", "Recordings Passing (%)": "NA"}
+        q25, q50, q75 = np.percentile(arr, [25, 50, 75])
+        pct_pass = float(pass_fn(arr).mean() * 100.0)
+        return {
+            "Metric": name,
+            "Expected / Threshold": threshold_lbl,
+            "Mean ± SD": f"{arr.mean():.2f} ± {arr.std(ddof=1):.2f}",
+            "Median [IQR]": f"{q50:.2f} [{q25:.2f}, {q75:.2f}]",
+            "Min – Max": f"{arr.min():.2f} – {arr.max():.2f}",
+            "Recordings Passing (%)": f"{pct_pass:.1f}%",
+        }
+
+    rows = [
+        _summarize(df["completeness_pct"], "> 99%", lambda s: s > 99.0, "Data completeness (% valid samples)"),
+        _summarize(df["missing_pct"], "< 1%", lambda s: s < 1.0, "Missing / flatlined samples (%)"),
+        _summarize(df["static_acc_norm"], "9.81 ± 0.50 m/s²", lambda s: np.abs(s - 9.81) <= 0.50, "Static accelerometer norm (m/s²)"),
+        _summarize(df["static_gyr_bias"], "< 5.0 deg/s", lambda s: s < 5.0, "Static gyroscope bias magnitude (deg/s)"),
+        _summarize(df["acc_clip_pct"], "≈ 0% (< 0.1%)", lambda s: s < 0.1, "Accelerometer saturation (% > 80 m/s²)"),
+        _summarize(df["gyr_clip_pct"], "≈ 0% (< 0.1%)", lambda s: s < 0.1, "Gyroscope saturation (% > 2000 deg/s)"),
+        _summarize(lags, "< 10 ms (1 sample)", lambda s: s <= 10.0, "Inter-IMU dynamic lag vs. US (ms)"),
+    ]
+
+    comp_arr = df["completeness_pct"].dropna()
+    acc_arr = df["static_acc_norm"].dropna()
+    gyr_arr = df["static_gyr_bias"].dropna()
+    print(
+        f'📝 Draft text: "Across all {len(df):,} sensor recordings ({len(data["set_ids"])} sets × {len(data["sensor_names"])} IMUs), '
+        f'data completeness was {comp_arr.mean():.1f} ± {comp_arr.std(ddof=1):.1f}% (min {comp_arr.min():.1f}%). '
+        f'The accelerometer norm during static periods was {acc_arr.mean():.2f} ± {acc_arr.std(ddof=1):.2f} m/s², '
+        f'and static gyroscope bias was {gyr_arr.mean():.2f} ± {gyr_arr.std(ddof=1):.2f} deg/s."'
+    )
+    return pd.DataFrame(rows)
+
+
+def plot_imu_validation_figure(dataset_dir: str | Path) -> go.Figure:
+    """Option 2: Compact 4-panel technical validation figure across all 54 Sets x 26 IMUs."""
+    data = _compute_dataset_imu_metrics(dataset_dir)
+    df = data["df"]
+    sensors = data["sensor_names"]
+
+    fig = make_subplots(
+        rows=2,
+        cols=2,
+        vertical_spacing=0.18,
+        horizontal_spacing=0.09,
+        subplot_titles=(
+            "<b>(a) Data Completeness (% Valid Samples)</b>",
+            "<b>(b) Static Accelerometer Norm per IMU</b>",
+            "<b>(c) Static Gyroscope Bias per IMU</b>",
+            "<b>(d) Inter-IMU Synchronization Lag vs. US</b>",
+        ),
+    )
+
+    # Panel (a): Completeness heatmap
+    fig.add_trace(
+        go.Heatmap(
+            z=data["completeness_matrix"],
+            x=sensors,
+            y=data["set_ids"],
+            colorscale=[[0.0, "#D55E00"], [0.5, "#E69F00"], [1.0, "#009E73"]],
+            zmin=0.0,
+            zmax=100.0,
+            colorbar=dict(title="% Valid", len=0.40, y=0.80, x=0.45),
+            hovertemplate="<b>%{y} · %{x}</b><br>Valid: %{z:.1f}%<extra></extra>",
+        ),
+        row=1, col=1,
+    )
+
+    # Panel (b): Static accelerometer norm boxplots (26 IMUs)
+    for code in sensors:
+        vals = df[df["sensor_code"] == code]["static_acc_norm"].dropna()
+        fig.add_trace(
+            go.Box(y=vals, name=code, marker_color=_PALETTE[0], showlegend=False, boxpoints="outliers"),
+            row=1, col=2,
+        )
+    fig.add_hline(y=9.81, line_dash="dash", line_color="#D55E00", annotation_text="9.81 m/s²", row=1, col=2)
+
+    # Panel (c): Static gyroscope bias boxplots (26 IMUs)
+    for code in sensors:
+        vals = df[df["sensor_code"] == code]["static_gyr_bias"].dropna()
+        fig.add_trace(
+            go.Box(y=vals, name=code, marker_color=_PALETTE[2], showlegend=False, boxpoints="outliers"),
+            row=2, col=1,
+        )
+    fig.add_hline(y=0.0, line_dash="dash", line_color="#374151", row=2, col=1)
+
+    # Panel (d): Inter-IMU synchronization lag histogram (ms)
+    if len(data["lags_ms"]):
+        fig.add_trace(
+            go.Histogram(
+                x=data["lags_ms"],
+                nbinsx=25,
+                marker_color=_PALETTE[1],
+                marker_line=dict(width=0.8, color="#111827"),
+                showlegend=False,
+            ),
+            row=2, col=2,
+        )
+        fig.add_vline(x=0.0, line_dash="dash", line_color="#111827", row=2, col=2)
+
+    fig.update_layout(
+        title=dict(
+            text="<b>Technical Validation of IMU Data (54 Sets × 26 Sensors = 1,404 Recordings)</b>",
+            x=0.5, y=0.98, font=dict(size=14),
+        ),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=820,
+        margin=dict(l=70, r=25, t=75, b=75),
+    )
+    _pub_axes(fig, rows=2, cols=2)
+    fig.update_xaxes(tickangle=-60, tickfont=dict(size=8), row=1, col=1)
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=7), row=1, col=1)
+    fig.update_xaxes(tickangle=-60, tickfont=dict(size=8), row=1, col=2)
+    fig.update_yaxes(title_text="Static |a| (m/s²)", row=1, col=2)
+    fig.update_xaxes(title_text="IMU Sensor", tickangle=-60, tickfont=dict(size=8), row=2, col=1)
+    fig.update_yaxes(title_text="Static |ω| (deg/s)", row=2, col=1)
+    fig.update_xaxes(title_text="Lag vs. US (ms)", row=2, col=2)
+    fig.update_yaxes(title_text="Recordings (count)", row=2, col=2)
+    return fig
