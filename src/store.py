@@ -24,17 +24,16 @@ def init_store(dataset_path: str = DEFAULT_DATASET_PATH):
 def display_table(
     df: pd.DataFrame,
     clean_columns: bool = True,
-) -> pd.DataFrame:
+) -> None:
     """Display a DataFrame using the environment's default renderer (Colab / IDE Data Wrangler)."""
     from IPython.display import display
 
     if df is None or df.empty:
         print("No records found.")
-        return df
+        return
 
     view_df = df.copy()
     if clean_columns:
         view_df.columns = [str(c).replace("_", " ").title() for c in view_df.columns]
 
     display(view_df)
-    return view_df
