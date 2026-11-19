@@ -539,6 +539,8 @@ def export_dataset(
         # Detailed fault summary from standardize_imu_arrays (missing, all_nan, partial_nan, flatline, freeze, clipping)
         sensor_faults = imu_arrays["sensor_faults"]
         faulty_str = "; ".join(f"{code} ({','.join(flts)})" for code, flts in sensor_faults.items()) or "NONE"
+        unique_fault_types = sorted({flt for flts in sensor_faults.values() for flt in flts})
+        fault_types_str = ", ".join(unique_fault_types) if unique_fault_types else "NONE"
 
         h5_set_row = {
             "set_id": set_id,
@@ -578,6 +580,7 @@ def export_dataset(
                 "imu_samples": n_samples,
                 "sensors_ok": h5_set_row["sensors_ok"],
                 "sensors_total": h5_set_row["sensors_total"],
+                "fault_types_found": fault_types_str,
                 "imu_faulty": faulty_str,
                 "sample_raw_cols": ", ".join(raw_imu_cols),
                 "n_annotators": n_ann,
@@ -632,10 +635,20 @@ def export_dataset(
 
     if dry_run:
         full_26 = int((diag_df["sensors_ok"] == 26).sum()) if not diag_df.empty else 0
+        from collections import Counter
+
+        ft_counts: Counter[str] = Counter()
+        if not diag_df.empty and "fault_types_found" in diag_df.columns:
+            for val in diag_df["fault_types_found"]:
+                if val and val != "NONE":
+                    for ft in str(val).split(", "):
+                        ft_counts[ft] += 1
+        breakdown = ", ".join(f"{k}={v}" for k, v in sorted(ft_counts.items())) or "none"
         print(
             f"\n🔎 DRY RUN SUMMARY: {len(diag_df)} Sets checked | "
             f"{full_26}/{len(diag_df)} have 26/26 healthy sensors | "
-            f"Participants: {len(part_df)} | Consensus markers: {len(cons_all_df)}"
+            f"Participants: {len(part_df)} | Consensus markers: {len(cons_all_df)}\n"
+            f"📊 Automated fault breakdown (Sets affected): {breakdown}"
         )
     else:
         part_df.to_csv(part_csv, index=False)
