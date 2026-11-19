@@ -758,6 +758,7 @@ def plot_annotation_agreement_figure(
     fig = go.Figure()
     if len(sd_all):
         med = float(np.median(sd_all))
+        q3 = float(np.percentile(sd_all, 75))
         p95 = float(np.percentile(sd_all, 95))
         p99 = float(np.percentile(sd_all, 99))
 
@@ -775,8 +776,9 @@ def plot_annotation_agreement_figure(
         )
         for val, lbl, dash, color, y_pos in [
             (med, f"Median: {med:.1f} ms", "solid", "#E08B63", 0.95),
-            (p95, f"95th pct: {p95:.1f} ms", "dash", "#374151", 0.83),
-            (p99, f"99th pct: {p99:.1f} ms", "dot", "#E74C3C", 0.71),
+            (q3, f"75th (Q3): {q3:.1f} ms", "longdash", "#52B79A", 0.83),
+            (p95, f"95th pct: {p95:.1f} ms", "dash", "#374151", 0.71),
+            (p99, f"99th pct: {p99:.1f} ms", "dot", "#E74C3C", 0.59),
         ]:
             fig.add_vline(x=val, line_width=2, line_dash=dash, line_color=color)
             fig.add_annotation(
