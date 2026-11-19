@@ -84,42 +84,26 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 ```text
 /README.md                      ← How to start, licence, citation
 /data_dictionary.csv            ← Every field, unit, type, description
-/sets_summary.csv               ← One row per Set (set_id, participant_id, session_date, load_kg, lifts, usable_lifts, tier, view_mode, sync offsets)
-/participant_summary.csv        ← One row per Participant (de-identified: participant_id, age, sex, height_m, body_mass_kg, experience_years, achievement, best_weight_kg)
-/device_summary.csv             ← Sensor ID / short code → full anatomical name, segment, side, position, axes, units
-/fault_log.csv                  ← One row per sensor fault (set_id, sensor_code, fault_type, start_idx, end_idx, start_s, end_s)
-/phase_markers_summary.csv      ← Flat table: set_id, lift_id, phase_marker, annotator_id, frame, imu_idx, time_s
+/sets_summary.csv               ← One row per Set 
+/participant_summary.csv        ← One row per Participant
+/device_summary.csv             ← Sensor IDs and naming, units and specs
+/fault_log.csv                  ← One row per sensor fault
+/phase_markers_summary.csv      ← Flat table
 /sets/
     └── set_XXXX.h5             ← Per-Set HDF5 archive (gzip level 4)
 /videos/
     ├── set_XXXX_front.mp4      ← 30 fps H.264 front camera
     ├── set_XXXX_side.mp4       ← 30 fps H.264 side camera
-    └── set_XXXX_side_by_side.mp4 ← Temporally synced side-by-side H.264 video
 /checksums.sha256               ← SHA-256 verification manifest for all files
 ```
 
 ### 3.2 HDF5 Layout (`/sets/set_XXXX.h5`)
 
 ```text
-/metadata                       attrs: set_id, participant_id, session_date, load_kg, lifts, usable_lifts, tier, view_mode, video_fps, imu_fs_hz, front_to_imu_lag_samples, side_to_front_lag_frames
-/participant_metadata           attrs: participant_id, age, sex, height_m, body_mass_kg, experience_years
-/imu/
-    ├── accel                   (N, 26, 3) float32   attrs: units="m/s^2", sample_rate_hz=100.0
-    ├── gyro                    (N, 26, 3) float32   attrs: units="deg/s", sample_rate_hz=100.0
-    ├── time_s                  (N,)       float64   attrs: units="s"
-    ├── sensor_names            (26,)      S4        ["RKP", "RHD", ..., "US"]
-    └── axis_names              (3,)       S2        ["X", "Y", "Z"]
-/pose/                          (optional, if available for the Set)
-    ├── pose_2d_front           (F_f, 17, 3) float32 attrs: coords=["x","y","conf"], fps=30.0
-    ├── pose_2d_side            (F_s, 17, 3) float32 attrs: coords=["x","y","conf"], fps=30.0
-    └── pose_3d                 (F_3, 17, 3) float32 attrs: units="m", fps=30.0
-/phase_markers/
-    ├── lift_id                 (M,)       int32
-    ├── marker_name             (M,)       S20       ["start", "setup", ..., "end"]
-    ├── annotator_id            (M,)       S16       e.g. "consensus" or "a2"
-    ├── frame                   (M,)       int32
-    ├── imu_idx                 (M,)       int32
-    └── time_s                  (M,)       float64
+/metadata                       attrs
+/participant_metadata           attrs of participant
+/imu_data
+/phase_markers
 ```
 
 ### 3.3 File Format Standards
