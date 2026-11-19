@@ -151,15 +151,8 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `load_kg` | `float` | `kg` | Barbell load for the Set |
 | `lifts_total` | `int` | `count` | Total Clean & Jerk lifts performed in the Set |
 | `lifts_usable` | `int` | `count` | Number of usable/annotated lifts |
-| `tier` | `str` | — | Quality tier (`complete` / `fault_tolerant`) |
-| `view_mode` | `str` | — | Camera coverage (`dual_view` / `front_only` / `side_only`) |
-| `video_fps` | `float` | `Hz` | Video frame rate (e.g. `30.0`) |
-| `imu_fs_hz` | `float` | `Hz` | IMU sampling rate (`100.0`) |
 | `imu_samples` | `int` | `samples` | Total IMU samples `N` |
 | `duration_s` | `float` | `s` | Recording duration (`N / imu_fs_hz`) |
-| `front_to_imu_lag_samples` | `int` | `samples` | `t_front - t_imu` in 100 Hz samples |
-| `front_to_imu_lag_sec` | `float` | `s` | `t_front - t_imu` in seconds |
-| `side_to_front_lag_frames` | `int` | `frames` | Frame offset between front and side cameras |
 | `sensors_ok` | `int` | `count` | Number of healthy IMUs (out of `26`) |
 | `sensors_total` | `int` | `count` | Total expected IMUs (`26`) |
 | `has_faults` | `bool` | — | `True` if any entry exists in `fault_log.csv` |
@@ -204,7 +197,7 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `time_s` | `float` | `s` | Synchronized timestamp (`imu_idx / imu_fs_hz`) |
 
 ### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema)
-- **`/metadata` (Group Attributes):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `tier`, `view_mode`, `video_fps`, `imu_fs_hz`, `front_to_imu_lag_samples`, `side_to_front_lag_frames`
+- **`/metadata` (Group Attributes):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `tier`, `view_mode`, `video_fps`, `imu_fs_hz`, `imu_samples`, `duration_s`, `sync_corr_r`
 - **`/participant_metadata` (Group Attributes):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `experience_years`
 - **`/imu_data/` (Group):**
   - `accel`: `(N, 26, 3)` `float32`, `units="m/s^2"`, `sample_rate_hz=100.0`
