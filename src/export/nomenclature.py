@@ -89,13 +89,37 @@ def _index_raw_columns(columns: list[str]) -> dict[tuple[int, int, str], str]:
     return lookup
 
 
+def _has_midtrial_freeze(vals: np.ndarray, min_run: int = 50) -> bool:
+    """Return True if `vals` stays identically constant for `min_run` consecutive samples."""
+    if len(vals) < min_run:
+        return False
+    valid = ~np.isnan(vals)
+    if not np.any(valid):
+        return False
+    # Run-length check on consecutive equal finite values
+    eq = (vals[1:] == vals[:-1]) & valid[1:] & valid[:-1]
+    if not np.any(eq):
+        return False
+    run = 1
+    for flag in eq:
+        if flag:
+            run += 1
+            if run >= min_run:
+                return True
+        else:
+            run = 1
+    return False
+
+
 def standardize_imu_arrays(
-    raw_df: pd.DataFrame, imu_fs_hz: float = 100.0
-) -> dict[str, np.ndarray | int]:
+    raw_df: pd.DataFrame,
+    imu_fs_hz: float = 100.0,
+    freeze_sec: float = 0.5,
+) -> dict:
     """Convert raw IMU DataFrame into standardized (N, 26, 3) accel/gyro tensors.
 
     Coalesces device 05 and device 11 into LHP/RHP/LS, pads missing channels with NaN,
-    and counts how many of the 26 sensors have valid (non-flatline, non-all-NaN) data.
+    and detects missing, all_nan, partial_nan, flatline, mid-trial freeze, and clipping.
     """
     n_samples = len(raw_df)
     n_sensors = len(DEVICE_SPEC)
@@ -103,13 +127,15 @@ def standardize_imu_arrays(
     gyro = np.full((n_samples, n_sensors, 3), np.nan, dtype=np.float32)
 
     col_lookup = _index_raw_columns(list(raw_df.columns))
+    min_freeze_run = max(5, int(round(freeze_sec * imu_fs_hz)))
+    sensor_faults: dict[str, set[str]] = {}
     sensors_ok = 0
 
     for s_idx, spec in enumerate(DEVICE_SPEC):
+        code = spec["short_code"]
         imu_i = spec["imu_index"]
         dev_candidates = [int(d) for d in spec["device_ids"]]
 
-        # Pick first device ID present in raw_df (handles 05 vs 11 swap)
         chosen_dev = None
         for dev_num in dev_candidates:
             if (dev_num, imu_i, "AX") in col_lookup or (dev_num, imu_i, "GX") in col_lookup:
@@ -117,30 +143,40 @@ def standardize_imu_arrays(
                 break
 
         if chosen_dev is None:
+            sensor_faults[code] = {"missing"}
             continue
 
-        sensor_healthy = True
-        for a_idx, ax in enumerate(("AX", "AY", "AZ")):
-            col = col_lookup.get((chosen_dev, imu_i, ax))
-            if col is not None:
+        faults: set[str] = set()
+        for target_arr, axes, clip_bound in [
+            (accel, ("AX", "AY", "AZ"), 80.0),
+            (gyro, ("GX", "GY", "GZ"), 2000.0),
+        ]:
+            for ax_idx, ax in enumerate(axes):
+                col = col_lookup.get((chosen_dev, imu_i, ax))
+                if col is None:
+                    faults.add("missing")
+                    continue
                 vals = pd.to_numeric(raw_df[col], errors="coerce").to_numpy(dtype=np.float32)
-                accel[:, s_idx, a_idx] = vals
-                if np.all(np.isnan(vals)) or np.nanstd(vals) == 0:
-                    sensor_healthy = False
-            else:
-                sensor_healthy = False
+                target_arr[:, s_idx, ax_idx] = vals
 
-        for g_idx, gx in enumerate(("GX", "GY", "GZ")):
-            col = col_lookup.get((chosen_dev, imu_i, gx))
-            if col is not None:
-                vals = pd.to_numeric(raw_df[col], errors="coerce").to_numpy(dtype=np.float32)
-                gyro[:, s_idx, g_idx] = vals
-                if np.all(np.isnan(vals)) or np.nanstd(vals) == 0:
-                    sensor_healthy = False
-            else:
-                sensor_healthy = False
+                nan_count = int(np.isnan(vals).sum())
+                if nan_count == n_samples:
+                    faults.add("all_nan")
+                    continue
+                if nan_count > 0:
+                    faults.add("partial_nan")
 
-        if sensor_healthy:
+                if np.nanstd(vals) == 0:
+                    faults.add("flatline")
+                elif _has_midtrial_freeze(vals, min_run=min_freeze_run):
+                    faults.add("freeze")
+
+                if np.nanmin(vals) < -clip_bound or np.nanmax(vals) > clip_bound:
+                    faults.add("clipping")
+
+        if faults:
+            sensor_faults[code] = faults
+        else:
             sensors_ok += 1
 
     sample_idx = np.arange(n_samples, dtype=np.int32)
@@ -153,6 +189,7 @@ def standardize_imu_arrays(
         "time_s": time_s,
         "sensors_ok": sensors_ok,
         "sensors_total": n_sensors,
+        "sensor_faults": {k: sorted(v) for k, v in sensor_faults.items()},
     }
 
 

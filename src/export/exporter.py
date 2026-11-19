@@ -204,6 +204,7 @@ def _build_participant_summary(
         rows.append(
             {
                 "participant_id": pid,
+                "name": str(meta.get("name", "")).strip() or "NA",
                 "age_years": int(age) if not np.isnan(age) else pd.NA,
                 "sex": "NA",
                 "height_m": height if not np.isnan(height) else pd.NA,
@@ -535,18 +536,11 @@ def export_dataset(
         n_samples = len(raw_df)
         duration_s = round(n_samples / imu_fs, 4)
 
-        # Identify which sensors are missing or flatlined/all-NaN
-        bad_sensors = []
-        acc_arr, gyr_arr = imu_arrays["accel"], imu_arrays["gyro"]
-        for s_idx, code in enumerate(SENSOR_ORDER):
-            a_slice = acc_arr[:, s_idx, :]
-            g_slice = gyr_arr[:, s_idx, :]
-            a_bad = np.all(np.isnan(a_slice)) or any(np.nanstd(a_slice[:, j]) == 0 for j in range(3))
-            g_bad = np.all(np.isnan(g_slice)) or any(np.nanstd(g_slice[:, j]) == 0 for j in range(3))
-            if a_bad or g_bad:
-                bad_sensors.append(code)
+        # Detailed fault summary from standardize_imu_arrays (missing, all_nan, partial_nan, flatline, freeze, clipping)
+        sensor_faults = imu_arrays["sensor_faults"]
+        faulty_str = "; ".join(f"{code} ({','.join(flts)})" for code, flts in sensor_faults.items()) or "NONE"
 
-        set_row = {
+        h5_set_row = {
             "set_id": set_id,
             "participant_id": rec["_participant_id"],
             "session_date": str(rec.get("date", "")),
@@ -559,7 +553,13 @@ def export_dataset(
             "sensors_total": int(imu_arrays["sensors_total"]),
             "has_faults": bool(rec["_has_faults"]),
         }
-        sets_rows.append(set_row)
+        csv_set_row = {
+            **h5_set_row,
+            "source_entry_id": rec["_source_entry_id"],
+            "original_experiment_id": str(rec.get("original_experiment_id", "")),
+            "imu_faulty": faulty_str,
+        }
+        sets_rows.append(csv_set_row)
 
         cons_df, ann_df = _extract_phase_markers(rec, source_base, video_fps, imu_fs, n_samples)
         if not cons_df.empty:
@@ -572,12 +572,13 @@ def export_dataset(
                 "set_id": set_id,
                 "participant_id": rec["_participant_id"],
                 "source_entry_id": rec["_source_entry_id"],
+                "original_experiment_id": str(rec.get("original_experiment_id", "")),
                 "has_faults": bool(rec["_has_faults"]),
                 "raw_csv_exists": True,
                 "imu_samples": n_samples,
-                "sensors_ok": set_row["sensors_ok"],
-                "sensors_total": set_row["sensors_total"],
-                "bad_or_missing_sensors": ", ".join(bad_sensors) if bad_sensors else "NONE",
+                "sensors_ok": h5_set_row["sensors_ok"],
+                "sensors_total": h5_set_row["sensors_total"],
+                "imu_faulty": faulty_str,
                 "sample_raw_cols": ", ".join(raw_imu_cols),
                 "n_annotators": n_ann,
                 "n_markers": len(cons_df),
@@ -589,20 +590,21 @@ def export_dataset(
         prefix = "[DRY RUN]" if dry_run else "✓ Exported"
         print(
             f"{prefix} {set_id} ({rec['_source_entry_id']}): "
-            f"sensors_ok={set_row['sensors_ok']}/26, "
+            f"sensors_ok={h5_set_row['sensors_ok']}/26, "
             f"markers={len(cons_df)} (ann={n_ann}), "
             f"videos=(F:{front_ok}, S:{side_ok}), "
-            f"has_faults={set_row['has_faults']}"
-            + (f" | bad={bad_sensors}" if bad_sensors else "")
+            f"has_faults={h5_set_row['has_faults']}"
+            + (f" | faulty={faulty_str}" if sensor_faults else "")
         )
 
         if not dry_run:
-            h5_meta = dict(set_row)
+            h5_meta = dict(h5_set_row)
             h5_meta["imu_fs_hz"] = imu_fs
+            h5_part_meta = {k: v for k, v in part_lookup[rec["_participant_id"]].items() if k != "name"}
             _write_set_h5(
                 out_dir / "sets" / f"{set_id}.h5",
                 set_meta=h5_meta,
-                part_meta=part_lookup[rec["_participant_id"]],
+                part_meta=h5_part_meta,
                 imu_arrays=imu_arrays,
                 cons_df=cons_df,
                 ann_df=ann_df,
