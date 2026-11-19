@@ -659,3 +659,164 @@ def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
     fig.update_xaxes(tickangle=-30)
     fig.update_yaxes(autorange="reversed", tickfont=dict(size=7))
     return fig
+
+
+def build_annotation_agreement_table(
+    dataset_dir: str | Path,
+    threshold_ms: float = 200.0,
+) -> pd.DataFrame:
+    """Table: Per-marker and overall inter-annotator agreement (right-skewed summary)."""
+    m_df = load_summary_tables(dataset_dir)["phase_markers"].copy()
+    if m_df.empty:
+        return pd.DataFrame()
+
+    present = [m for m in MARKER_ORDER if m in set(m_df["marker_name"])]
+
+    def _row_stats(label: str, sub: pd.DataFrame) -> dict:
+        n_total = len(sub)
+        all3 = sub[sub["n_annotators"] >= 3]
+        pct_all3 = (len(all3) / n_total * 100.0) if n_total else 0.0
+        sd_vals = all3["sd_ms"].dropna().to_numpy(dtype=float)
+        if len(sd_vals) == 0:
+            return {
+                "Marker type": label,
+                "n instances": n_total,
+                "Marked by all 3 (%)": f"{pct_all3:.1f}%",
+                "Median SD (ms) [IQR]": "NA",
+                "Mean ± SD (ms)": "NA",
+                "90th pct (ms)": "NA",
+                "95th pct (ms)": "NA",
+                f"% < {int(threshold_ms)} ms": "NA",
+                "Max (ms)": "NA",
+            }
+        q25, med, q75, p90, p95 = np.percentile(sd_vals, [25, 50, 75, 90, 95])
+        pct_lt = float((sd_vals < threshold_ms).mean() * 100.0)
+        return {
+            "Marker type": label,
+            "n instances": n_total,
+            "Marked by all 3 (%)": f"{pct_all3:.1f}%",
+            "Median SD (ms) [IQR]": f"{med:.1f} [{q25:.1f}, {q75:.1f}]",
+            "Mean ± SD (ms)": f"{np.mean(sd_vals):.1f} ± {np.std(sd_vals, ddof=1):.1f}",
+            "90th pct (ms)": f"{p90:.1f}",
+            "95th pct (ms)": f"{p95:.1f}",
+            f"% < {int(threshold_ms)} ms": f"{pct_lt:.1f}%",
+            "Max (ms)": f"{np.max(sd_vals):.1f}",
+            "_med": med,
+        }
+
+    rows = [_row_stats(m, m_df[m_df["marker_name"] == m]) for m in present]
+    overall = _row_stats("All markers", m_df)
+    rows.append(overall)
+
+    # Print ready-to-paste manuscript text
+    all3_all = m_df[m_df["n_annotators"] >= 3]["sd_ms"].dropna().to_numpy(dtype=float)
+    if len(all3_all):
+        q25, med, q75, p90 = np.percentile(all3_all, [25, 50, 75, 90])
+        pct3 = len(all3_all) / len(m_df) * 100.0
+        marker_rows = [r for r in rows[:-1] if "_med" in r]
+        best_m = min(marker_rows, key=lambda r: r["_med"])
+        worst_m = max(marker_rows, key=lambda r: r["_med"])
+        print(
+            f'📝 Draft text: "Of {len(m_df):,} marker instances, {pct3:.1f}% were identified by all three annotators. '
+            f'For these, the inter-annotator SD of marker timestamps was right-skewed, with a median of {med:.1f} ms '
+            f'[IQR {q25:.1f}–{q75:.1f} ms]; 90% of instances showed an SD below {p90:.1f} ms '
+            f'(≈ {p90 / 10.0:.1f} samples at 100 Hz). Agreement was highest for {best_m["Marker type"]} '
+            f'(median {best_m["_med"]:.1f} ms) and lowest for {worst_m["Marker type"]} '
+            f'(median {worst_m["_med"]:.1f} ms)."'
+        )
+
+    out_df = pd.DataFrame(rows).drop(columns=["_med"], errors="ignore")
+    return out_df
+
+
+def plot_annotation_agreement_figure(
+    dataset_dir: str | Path,
+    log_x_ecdf: bool = False,
+) -> go.Figure:
+    """Two-panel agreement figure: (a) pooled SD histogram with median & 95th pct, (b) ECDF per marker."""
+    m_df = load_summary_tables(dataset_dir)["phase_markers"].copy()
+    all3 = m_df[m_df["n_annotators"] >= 3].dropna(subset=["sd_ms"])
+    sd_all = all3["sd_ms"].to_numpy(dtype=float)
+
+    fig = make_subplots(
+        rows=1,
+        cols=2,
+        horizontal_spacing=0.10,
+        subplot_titles=(
+            "<b>(a) Pooled Inter-Annotator SD Distribution</b>",
+            "<b>(b) Cumulative Distribution (ECDF) per Marker</b>",
+        ),
+    )
+
+    if len(sd_all):
+        med = float(np.median(sd_all))
+        p95 = float(np.percentile(sd_all, 95))
+
+        fig.add_trace(
+            go.Histogram(
+                x=sd_all,
+                nbinsx=40,
+                marker_color=_PALETTE[0],
+                marker_line=dict(width=0.7, color="#111827"),
+                name="All markers",
+                showlegend=False,
+            ),
+            row=1, col=1,
+        )
+        fig.add_vline(
+            x=med, line_width=2, line_dash="solid", line_color="#D55E00",
+            annotation_text=f"Median: {med:.1f} ms", annotation_position="top right",
+            row=1, col=1,
+        )
+        fig.add_vline(
+            x=p95, line_width=2, line_dash="dash", line_color="#111827",
+            annotation_text=f"95th pct: {p95:.1f} ms", annotation_position="top right",
+            row=1, col=1,
+        )
+
+    present = [m for m in MARKER_ORDER if m in set(all3["marker_name"])]
+    dash_styles = ["solid", "dash", "dot", "dashdot"]
+    for idx, marker in enumerate(present):
+        vals = np.sort(all3[all3["marker_name"] == marker]["sd_ms"].to_numpy(dtype=float))
+        if len(vals) == 0:
+            continue
+        x_vals = np.maximum(vals, 1.0) if log_x_ecdf else vals
+        y_vals = np.arange(1, len(vals) + 1) / len(vals) * 100.0
+        fig.add_trace(
+            go.Scatter(
+                x=x_vals,
+                y=y_vals,
+                mode="lines",
+                name=marker,
+                line=dict(
+                    width=1.6,
+                    color=_PALETTE[idx % len(_PALETTE)],
+                    dash=dash_styles[(idx // len(_PALETTE)) % len(dash_styles)],
+                ),
+            ),
+            row=1, col=2,
+        )
+
+    fig.update_layout(
+        title=dict(
+            text="<b>Inter-Annotator Agreement of Event Markers (3 Annotators/Set, 54 Sets)</b>",
+            x=0.5, y=0.98, font=dict(size=14),
+        ),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=470,
+        margin=dict(l=65, r=25, t=75, b=85),
+        legend=dict(orientation="h", y=-0.20, x=0.5, xanchor="center", font=dict(size=10)),
+    )
+    _pub_axes(fig, rows=1, cols=2)
+    fig.update_xaxes(title_text="Inter-Annotator SD (ms)", row=1, col=1)
+    fig.update_yaxes(title_text="Marker Instances (count)", row=1, col=1)
+    fig.update_xaxes(
+        title_text="Inter-Annotator SD (ms)" + (" [log]" if log_x_ecdf else ""),
+        type="log" if log_x_ecdf else "linear",
+        row=1, col=2,
+    )
+    fig.update_yaxes(title_text="Cumulative Instances (%)", range=[0, 102], row=1, col=2)
+    return fig

@@ -12,9 +12,11 @@ from .loader import (
     load_summary_tables,
 )
 from .paper_figures import (
+    build_annotation_agreement_table,
     build_imu_quality_table,
     build_paper_tables,
     plot_all_sets_annotation_sd_heatmap,
+    plot_annotation_agreement_figure,
     plot_fig4_annotation_scheme,
     plot_imu_validation_figure,
     plot_set_annotator_grid,
@@ -30,6 +32,7 @@ from .plots import (
 __all__ = [
     "DEFAULT_CLEAN_DATASET_DIR",
     "JOINT_SENSOR_PAIRS",
+    "build_annotation_agreement_table",
     "build_imu_quality_table",
     "build_paper_tables",
     "detect_set_faults",
@@ -37,6 +40,7 @@ __all__ = [
     "load_set_h5",
     "load_summary_tables",
     "plot_all_sets_annotation_sd_heatmap",
+    "plot_annotation_agreement_figure",
     "plot_cohort_overview",
     "plot_fig4_annotation_scheme",
     "plot_imu_validation_figure",
