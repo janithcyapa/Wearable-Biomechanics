@@ -12,22 +12,22 @@
 | **Phase Markers** | The **12** timestamps / frame indices separating the 11 phases. Each marker denotes the **start** of its phase, except `end_rep` which marks the **end** of the final phase (`end_rest`) and the Lift. | `rep_segments_a{id}` columns |
 | **Metadata** | Participant anthropometrics and background (`age`, `sex`, `height`, `body_mass`, `training_experience`, `achievement`, `best_weight`). | `subjects` & `experiments` manifests |
 
-### 1.1 The 11 Phases & 12 Phase Markers
+### 1.1 The 11 Phases & 12 Standardized Phase Markers (Max 2 Words)
 
-| Marker # | Marker Name | Role | Phase Defined (`[Marker_i, Marker_{i+1})`) |
-| --- | --- | --- | --- |
-| 1 | `start_rest` | Start of Phase 1 | **Phase 1:** Pre-lift rest (`start_rest` → `setup`) |
-| 2 | `setup` | Start of Phase 2 | **Phase 2:** Setup / address (`setup` → `first_pull`) |
-| 3 | `first_pull` | Start of Phase 3 | **Phase 3:** First pull (`first_pull` → `second_pull`) |
-| 4 | `second_pull` | Start of Phase 4 | **Phase 4:** Second pull (`second_pull` → `clean`) |
-| 5 | `clean` | Start of Phase 5 | **Phase 5:** Clean catch & recovery (`clean` → `middle_rest`) |
-| 6 | `middle_rest` | Start of Phase 6 | **Phase 6:** Pre-jerk rest (`middle_rest` → `jerk_phase_one`) |
-| 7 | `jerk_phase_one` | Start of Phase 7 | **Phase 7:** Jerk dip & drive (`jerk_phase_one` → `jerk_phase_two`) |
-| 8 | `jerk_phase_two` | Start of Phase 8 | **Phase 8:** Jerk split / catch (`jerk_phase_two` → `rest_up`) |
-| 9 | `rest_up` | Start of Phase 9 | **Phase 9:** Overhead stabilization (`rest_up` → `bring_down`) |
-| 10 | `bring_down` | Start of Phase 10 | **Phase 10:** Bar descent (`bring_down` → `end_rest`) |
-| 11 | `end_rest` | Start of Phase 11 | **Phase 11:** Post-lift rest (`end_rest` → `end_rep`) |
-| 12 | `end_rep` | End of Phase 11 & Lift | — |
+| # | Legacy Annotation Tag | Standardized Marker | Role | Phase # & Name (`[Marker_i, Marker_{i+1})`) |
+| --- | --- | --- | --- | --- |
+| 1 | `start_rest` | `start` | Start of Phase 1 | **P1 — `pre_rest`** (`start` → `setup`) |
+| 2 | `setup` | `setup` | Start of Phase 2 | **P2 — `setup`** (`setup` → `first_pull`) |
+| 3 | `first_pull` | `first_pull` | Start of Phase 3 | **P3 — `first_pull`** (`first_pull` → `second_pull`) |
+| 4 | `second_pull` | `second_pull` | Start of Phase 4 | **P4 — `second_pull`** (`second_pull` → `clean`) |
+| 5 | `clean` | `clean` | Start of Phase 5 | **P5 — `clean`** (`clean` → `intermediate_rest`) |
+| 6 | `middle_rest` | `intermediate_rest` | Start of Phase 6 | **P6 — `intermediate_rest`** (`intermediate_rest` → `jerk_drive`) |
+| 7 | `jerk_phase_one` | `jerk_drive` | Start of Phase 7 | **P7 — `jerk_drive`** (`jerk_drive` → `jerk_catch`) |
+| 8 | `jerk_phase_two` | `jerk_catch` | Start of Phase 8 | **P8 — `jerk_catch`** (`jerk_catch` → `overhead_hold`) |
+| 9 | `rest_up` | `overhead_hold` | Start of Phase 9 | **P9 — `overhead_hold`** (`overhead_hold` → `descend`) |
+| 10 | `bring_down` | `descend` | Start of Phase 10 | **P10 — `descend`** (`descend` → `recovery`) |
+| 11 | `end_rest` | `recovery` | Start of Phase 11 | **P11 — `recovery`** (`recovery` → `end`) |
+| 12 | `end_rep` | `end` | End of Phase 11 & Lift | — |
 
 ---
 
@@ -114,3 +114,4 @@ exported_dataset/
 - Sensor completeness matrix & signal quality summary across all Sets.
 - Inter-annotator agreement (SD in frames & ms) across all 12 Phase Markers and 11 Phases.
 - Exported publication-ready Plotly figures (3× high-DPI PNG/SVG) and LaTeX/Markdown tables.
+
