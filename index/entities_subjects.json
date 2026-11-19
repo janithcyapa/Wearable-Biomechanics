@@ -3,6 +3,7 @@
   "sub_0001": {
     "name": "Hivindu Kirulapana",
     "age": 22,
+    "sex": "male",
     "weight": 72,
     "height": 174,
     "experience": 1,
@@ -13,6 +14,7 @@
   "sub_0002": {
     "name": "Yasith Dissanayake",
     "age": 22,
+    "sex": "male",
     "weight": 69,
     "height": 178,
     "experience": 4,
@@ -23,6 +25,7 @@
   "sub_0003": {
     "name": "Yewin Dissanayake",
     "age": 22,
+    "sex": "male",
     "weight": 65,
     "height": 170,
     "experience": 2,
@@ -33,6 +36,7 @@
   "sub_0004": {
     "name": "J W K Mahasen Jayasundara",
     "age": 24,
+    "sex": "male",
     "weight": 69,
     "height": 178,
     "experience": 5,
@@ -43,6 +47,7 @@
   "sub_0005": {
     "name": "Achalani Royal",
     "age": 23,
+    "sex": "female",
     "weight": 49,
     "height": 160,
     "experience": 1.5,
@@ -53,6 +58,7 @@
   "sub_0006": {
     "name": "Pandula",
     "age": 0,
+    "sex": "male",
     "weight": 0,
     "height": 0,
     "experience": 0,
@@ -63,6 +69,7 @@
   "sub_0007": {
     "name": "Enuka",
     "age": 0,
+    "sex": "male",
     "weight": 0,
     "height": 0,
     "experience": 0,
@@ -73,6 +80,7 @@
   "sub_0008": {
     "name": "Thevindu Samarasekera",
     "age": 25,
+    "sex": "male",
     "weight": 62,
     "height": 169,
     "experience": 0.25,
@@ -83,6 +91,7 @@
   "sub_0009": {
     "name": "Induwara Liyanage",
     "age": 21,
+    "sex": "male",
     "weight": 62,
     "height": 170,
     "experience": 1,
@@ -93,6 +102,7 @@
   "sub_0010": {
     "name": "Duleetha",
     "age": 0,
+    "sex": "male",
     "weight": 0,
     "height": 0,
     "experience": 0,
@@ -103,6 +113,7 @@
   "sub_0011": {
     "name": "Nirmal Samarawickrama",
     "age": 22,
+    "sex": "male",
     "weight": 67,
     "height": 173,
     "experience": 0,
@@ -113,6 +124,7 @@
   "sub_0012": {
     "name": "J. M. Sudeshe Jayasinghe",
     "age": 23,
+    "sex": "male",
     "weight": 60,
     "height": 156,
     "experience": 0,
@@ -123,6 +135,7 @@
   "sub_0013": {
     "name": "Dulan Jayasooriya",
     "age": 21,
+    "sex": "male",
     "weight": 86,
     "height": 180,
     "experience": 0.04,
@@ -133,6 +146,7 @@
   "sub_0014": {
     "name": "Uvindu Piyumika",
     "age": 20,
+    "sex": "male",
     "weight": 60,
     "height": 172,
     "experience": 2,
@@ -143,6 +157,7 @@
   "sub_0015": {
     "name": "Dulain Basnayake",
     "age": 23,
+    "sex": "male",
     "weight": 75,
     "height": 168,
     "experience": 0.67,
@@ -153,6 +168,7 @@
   "sub_0016": {
     "name": "Thisaree Senanayake",
     "age": 21,
+    "sex": "female",
     "weight": 50,
     "height": 168,
     "experience": 0.5,
@@ -163,6 +179,7 @@
   "sub_0017": {
     "name": "Chamalki Weebadde",
     "age": 21,
+    "sex": "male",
     "weight": 76,
     "height": 162,
     "experience": 3,
@@ -173,6 +190,7 @@
   "sub_0018": {
     "name": "Nethmi Udara",
     "age": 22,
+    "sex": "female",
     "weight": 83,
     "height": 164,
     "experience": 9,
@@ -183,6 +201,7 @@
   "sub_0019": {
     "name": "Dinithi Wijekoon",
     "age": 21,
+    "sex": "female",
     "weight": 57,
     "height": 153,
     "experience": 3.25,

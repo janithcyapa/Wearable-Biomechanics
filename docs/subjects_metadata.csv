@@ -1,20 +1,20 @@
-subject_id,full_name,age_years,height_cm,body_weight_kg,weightlifting_experience_months,weight_category_kg,clean_jerk_pb_kg,clean_jerk_pb_year,highest_achievement,competition_weight_category_kg,competition_placement,competition_clean_jerk_kg,other_sports
-sub_0001,Hivindu Kirulapana,22,174,72,12,,,,,,,,Rugby
-sub_0002,Yasith Dissanayake,22,178,69,48,,55,,,,,,Rugby
-sub_0003,Yewin Dissanayake,22,170,65,24,,95,,Intermediate bronze medal 2025,,3rd place (Bronze),,None
-sub_0004,J W K Mahasen Jayasundara,24,178,69,60,,50,,,,,,"Rugby, Badminton"
-sub_0005,Achalani Royal,23,160,49,18,,55,,Central Province Festival Selection 4th place,,4th place,,None
-sub_0006,Pandula,,,,,,,,,,,,
-sub_0007,Enuka,,,,,,,,,,,,
-sub_0008,Thevindu Samarasekera,25,169,62,3,,55,,,,,,"Swimming, Badminton, Diving, Water polo, Cricket"
-sub_0009,Induwara Liyanage,21,170,62,12,65,50,2026,,,,,Swimming
-sub_0010,Duleetha,,,,,,,,,,,,
-sub_0011,Nirmal Samarawickrama,22,173,67,0,,,,,,,,"Hockey, Wushu"
-sub_0012,J. M. Sudeshe Jayasinghe,23,156,60,0,,,,,,,,Karate
-sub_0013,Dulan Jayasooriya,21,180,86,0.5,,71,,,,,,Powerlifting
-sub_0014,Uvindu Piyumika,20,172,60,24,,92,,All island bronze medal,,3rd place (Bronze),,None
-sub_0015,Dulain Basnayake,23,168,75,8,75,130,2026,2026 Central Province Weightlifting Championship 1st runners up (75kg weight class),75,1st Runner-up,,"Powerlifting, Karate, Badminton"
-sub_0016,Thisaree Senanayake,21,168,50,6,,30,,,,,,Netball
-sub_0017,Chamalki Weebadde,21,162,76,36,77,75,2025,2026 Central Province Weightlifting Championship,77,1st place,68 kg (121 kg total),Boxing (2024 Central Province Boxing Championship 1st place)
-sub_0018,Nethmi Udara,22,164,83,108,86,100,2026,1st Runner-up - 2026 50th National Sports Festival,86,1st Runner-up,100,Powerlifting
-sub_0019,Dinithi Wijekoon,21,153,57,39,57,83,2026,2nd place - National Festival 2025 (Open) / 2025 Junior Nationals Clean and Jerk - 1st place with a junior record on clean and jerk,63,2nd place / 1st place,73kg / 78kg,Gymnastics
+subject_id,full_name,age_years,sex,height_cm,body_weight_kg,weightlifting_experience_months,weight_category_kg,clean_jerk_pb_kg,clean_jerk_pb_year,highest_achievement,competition_weight_category_kg,competition_placement,competition_clean_jerk_kg,other_sports
+sub_0001,Hivindu Kirulapana,22,male,174,72,12,,,,,,,,Rugby
+sub_0002,Yasith Dissanayake,22,male,178,69,48,,55,,,,,,Rugby
+sub_0003,Yewin Dissanayake,22,male,170,65,24,,95,,Intermediate bronze medal 2025,,3rd place (Bronze),,None
+sub_0004,J W K Mahasen Jayasundara,24,male,178,69,60,,50,,,,,,"Rugby, Badminton"
+sub_0005,Achalani Royal,23,female,160,49,18,,55,,Central Province Festival Selection 4th place,,4th place,,None
+sub_0006,Pandula,,male,,,,,,,,,,,
+sub_0007,Enuka,,male,,,,,,,,,,,
+sub_0008,Thevindu Samarasekera,25,male,169,62,3,,55,,,,,,"Swimming, Badminton, Diving, Water polo, Cricket"
+sub_0009,Induwara Liyanage,21,male,170,62,12,65,50,2026,,,,,Swimming
+sub_0010,Duleetha,,male,,,,,,,,,,,
+sub_0011,Nirmal Samarawickrama,22,male,173,67,0,,,,,,,,"Hockey, Wushu"
+sub_0012,J. M. Sudeshe Jayasinghe,23,male,156,60,0,,,,,,,,Karate
+sub_0013,Dulan Jayasooriya,21,male,180,86,0.5,,71,,,,,,Powerlifting
+sub_0014,Uvindu Piyumika,20,male,172,60,24,,92,,All island bronze medal,,3rd place (Bronze),,None
+sub_0015,Dulain Basnayake,23,male,168,75,8,75,130,2026,2026 Central Province Weightlifting Championship 1st runners up (75kg weight class),75,1st Runner-up,,"Powerlifting, Karate, Badminton"
+sub_0016,Thisaree Senanayake,21,female,168,50,6,,30,,,,,,Netball
+sub_0017,Chamalki Weebadde,21,male,162,76,36,77,75,2025,2026 Central Province Weightlifting Championship,77,1st place,68 kg (121 kg total),Boxing (2024 Central Province Boxing Championship 1st place)
+sub_0018,Nethmi Udara,22,female,164,83,108,86,100,2026,1st Runner-up - 2026 50th National Sports Festival,86,1st Runner-up,100,Powerlifting
+sub_0019,Dinithi Wijekoon,21,female,153,57,39,57,83,2026,2nd place - National Festival 2025 (Open) / 2025 Junior Nationals Clean and Jerk - 1st place with a junior record on clean and jerk,63,2nd place / 1st place,73kg / 78kg,Gymnastics
