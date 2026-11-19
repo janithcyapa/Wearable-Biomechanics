@@ -180,121 +180,191 @@ def plot_joint_4panel(
     joint_name: str = "right_knee",
     lift_id: int | None = None,
 ) -> go.Figure:
-    """Plot 4 subplots (Accel & Gyro for both sensors of a joint) with vertical phase marker labels."""
+    """Plot 4 stacked subplots (1 column: S1 Accel, S1 Gyro, S2 Accel, S2 Gyro)
+    with interactive Plotly dropdowns to switch Joints and Full Set / Individual Lifts.
+    """
     if joint_name not in JOINT_SENSOR_PAIRS:
         raise ValueError(f"Unknown joint '{joint_name}'. Choose from {list(JOINT_SENSOR_PAIRS)}")
 
-    s1, s2 = JOINT_SENSOR_PAIRS[joint_name]
     sensors = set_data["sensors"]
-    idx1, idx2 = sensors.index(s1), sensors.index(s2)
-
     t = set_data["time_s"]
-    acc1, gyr1 = set_data["accel"][:, idx1, :], set_data["gyro"][:, idx1, :]
-    acc2, gyr2 = set_data["accel"][:, idx2, :], set_data["gyro"][:, idx2, :]
+    acc_all = set_data["accel"]
+    gyr_all = set_data["gyro"]
     cons_df = set_data["consensus_df"]
 
-    if lift_id is not None and not cons_df.empty:
-        cons_plot = cons_df[cons_df["lift_id"] == lift_id]
-        if not cons_plot.empty:
-            t_min = float(cons_plot["time_s"].min()) - 0.5
-            t_max = float(cons_plot["time_s"].max()) + 0.5
-            mask = (t >= t_min) & (t <= t_max)
-            t = t[mask]
-            acc1, gyr1 = acc1[mask], gyr1[mask]
-            acc2, gyr2 = acc2[mask], gyr2[mask]
-    else:
-        cons_plot = cons_df
+    joint_keys = list(JOINT_SENSOR_PAIRS.keys())
+    default_joint_idx = joint_keys.index(joint_name)
+    s1_init, s2_init = JOINT_SENSOR_PAIRS[joint_name]
 
     fig = make_subplots(
-        rows=2,
-        cols=2,
+        rows=4,
+        cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.10,
-        horizontal_spacing=0.07,
+        vertical_spacing=0.045,
         subplot_titles=(
-            f"<b>{s1} — Accelerometer (m/s²)</b>",
-            f"<b>{s2} — Accelerometer (m/s²)</b>",
-            f"<b>{s1} — Gyroscope (deg/s)</b>",
-            f"<b>{s2} — Gyroscope (deg/s)</b>",
+            f"<b>{s1_init} — Accelerometer (m/s²)</b>",
+            f"<b>{s1_init} — Gyroscope (deg/s)</b>",
+            f"<b>{s2_init} — Accelerometer (m/s²)</b>",
+            f"<b>{s2_init} — Gyroscope (deg/s)</b>",
         ),
     )
 
-    for ax_i, ax_name in enumerate(("X", "Y", "Z")):
-        c_acc = _PUB_PALETTE[ax_i]
-        c_gyr = _PUB_PALETTE[ax_i + 3]
-        fig.add_trace(
-            go.Scatter(x=t, y=acc1[:, ax_i], mode="lines", name=f"A{ax_name}",
-                       legendgroup=f"A{ax_name}", line=dict(width=1.2, color=c_acc)),
-            row=1, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=t, y=acc2[:, ax_i], mode="lines", name=f"A{ax_name}",
-                       legendgroup=f"A{ax_name}", showlegend=False, line=dict(width=1.2, color=c_acc)),
-            row=1, col=2,
-        )
-        fig.add_trace(
-            go.Scatter(x=t, y=gyr1[:, ax_i], mode="lines", name=f"G{ax_name}",
-                       legendgroup=f"G{ax_name}", line=dict(width=1.2, color=c_gyr)),
-            row=2, col=1,
-        )
-        fig.add_trace(
-            go.Scatter(x=t, y=gyr2[:, ax_i], mode="lines", name=f"G{ax_name}",
-                       legendgroup=f"G{ax_name}", showlegend=False, line=dict(width=1.2, color=c_gyr)),
-            row=2, col=2,
-        )
+    # Pre-build traces for all 13 joints (12 traces per joint: 3 axes × 4 panels)
+    traces_per_joint = 12
+    total_traces = len(joint_keys) * traces_per_joint
 
-    # Vertical dashed lines + vertical text labels along the top of the plot
-    if not cons_plot.empty:
-        for _, row in cons_plot.iterrows():
+    for j_idx, j_key in enumerate(joint_keys):
+        s1, s2 = JOINT_SENSOR_PAIRS[j_key]
+        idx1, idx2 = sensors.index(s1), sensors.index(s2)
+        visible = j_idx == default_joint_idx
+
+        for ax_i, ax_name in enumerate(("X", "Y", "Z")):
+            c_acc = _PUB_PALETTE[ax_i]
+            c_gyr = _PUB_PALETTE[ax_i + 3]
+            fig.add_trace(
+                go.Scatter(x=t, y=acc_all[:, idx1, ax_i], mode="lines", name=f"A{ax_name}",
+                           legendgroup=f"A{ax_name}", showlegend=(j_idx == default_joint_idx),
+                           visible=visible, line=dict(width=1.2, color=c_acc)),
+                row=1, col=1,
+            )
+        for ax_i, ax_name in enumerate(("X", "Y", "Z")):
+            c_gyr = _PUB_PALETTE[ax_i + 3]
+            fig.add_trace(
+                go.Scatter(x=t, y=gyr_all[:, idx1, ax_i], mode="lines", name=f"G{ax_name}",
+                           legendgroup=f"G{ax_name}", showlegend=(j_idx == default_joint_idx),
+                           visible=visible, line=dict(width=1.2, color=c_gyr)),
+                row=2, col=1,
+            )
+        for ax_i, ax_name in enumerate(("X", "Y", "Z")):
+            c_acc = _PUB_PALETTE[ax_i]
+            fig.add_trace(
+                go.Scatter(x=t, y=acc_all[:, idx2, ax_i], mode="lines", name=f"A{ax_name}",
+                           legendgroup=f"A{ax_name}", showlegend=False,
+                           visible=visible, line=dict(width=1.2, color=c_acc)),
+                row=3, col=1,
+            )
+        for ax_i, ax_name in enumerate(("X", "Y", "Z")):
+            c_gyr = _PUB_PALETTE[ax_i + 3]
+            fig.add_trace(
+                go.Scatter(x=t, y=gyr_all[:, idx2, ax_i], mode="lines", name=f"G{ax_name}",
+                           legendgroup=f"G{ax_name}", showlegend=False,
+                           visible=visible, line=dict(width=1.2, color=c_gyr)),
+                row=4, col=1,
+            )
+
+    # Vertical dashed phase marker lines + vertical text labels along top
+    if not cons_df.empty:
+        for _, row in cons_df.iterrows():
             ts = float(row["time_s"])
-            label = f"L{int(row['lift_id'])}:{row['marker_name']}" if lift_id is None else str(row["marker_name"])
-            for col_i in (1, 2):
-                fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#6b7280", row=1, col=col_i)
-                fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#6b7280", row=2, col=col_i)
+            label = f"L{int(row['lift_id'])}:{row['marker_name']}"
+            for r in (1, 2, 3, 4):
+                fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#6b7280", row=r, col=1)
             fig.add_annotation(
-                x=ts, y=1.01, yref="paper", xref="x",
-                text=label, showarrow=False, textangle=-90,
-                xanchor="center", yanchor="bottom",
-                font=dict(size=9, color="#374151"),
-            )
-            fig.add_annotation(
-                x=ts, y=1.01, yref="paper", xref="x2",
+                x=ts, y=1.005, yref="paper", xref="x",
                 text=label, showarrow=False, textangle=-90,
                 xanchor="center", yanchor="bottom",
                 font=dict(size=9, color="#374151"),
             )
 
-    lift_label = f"Lift {lift_id}" if lift_id is not None else "Full Set"
+    # Dropdown 1: Switch Joint (instant client-side HTML/JS)
+    joint_buttons = []
+    for j_idx, j_key in enumerate(joint_keys):
+        s1, s2 = JOINT_SENSOR_PAIRS[j_key]
+        vis = [False] * total_traces
+        start_i = j_idx * traces_per_joint
+        for k in range(start_i, start_i + traces_per_joint):
+            vis[k] = True
+        joint_buttons.append(
+            dict(
+                label=f"{j_key.replace('_', ' ').title()} ({s1}, {s2})",
+                method="update",
+                args=[
+                    {"visible": vis},
+                    {
+                        "title.text": f"<b>{set_data['set_id']} — {j_key.replace('_', ' ').title()} ({s1} & {s2})</b>",
+                        "annotations[0].text": f"<b>{s1} — Accelerometer (m/s²)</b>",
+                        "annotations[1].text": f"<b>{s1} — Gyroscope (deg/s)</b>",
+                        "annotations[2].text": f"<b>{s2} — Accelerometer (m/s²)</b>",
+                        "annotations[3].text": f"<b>{s2} — Gyroscope (deg/s)</b>",
+                    },
+                ],
+            )
+        )
+
+    # Dropdown 2: Switch Full Set vs Individual Lifts (zoom x-axis)
+    full_range = [float(t[0]), float(t[-1])]
+    lift_buttons = [
+        dict(label="Full Set", method="relayout", args=[{"xaxis4.range": full_range}])
+    ]
+    if not cons_df.empty:
+        for lid in sorted(cons_df["lift_id"].unique()):
+            sub = cons_df[cons_df["lift_id"] == lid]
+            r_min = max(float(t[0]), float(sub["time_s"].min()) - 0.5)
+            r_max = min(float(t[-1]), float(sub["time_s"].max()) + 0.5)
+            lift_buttons.append(
+                dict(label=f"Lift {int(lid)}", method="relayout", args=[{"xaxis4.range": [r_min, r_max]}])
+            )
+
+    init_x_range = full_range
+    active_lift_idx = 0
+    if lift_id is not None and not cons_df.empty:
+        sub = cons_df[cons_df["lift_id"] == lift_id]
+        if not sub.empty:
+            init_x_range = [
+                max(float(t[0]), float(sub["time_s"].min()) - 0.5),
+                min(float(t[-1]), float(sub["time_s"].max()) + 0.5),
+            ]
+            lids = sorted(cons_df["lift_id"].unique())
+            if lift_id in lids:
+                active_lift_idx = lids.index(lift_id) + 1
+
     fig.update_layout(
+        updatemenus=[
+            dict(
+                active=default_joint_idx,
+                buttons=joint_buttons,
+                x=0.0, y=1.10, xanchor="left", yanchor="top",
+                direction="down", showactive=True,
+                bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
+            ),
+            dict(
+                active=active_lift_idx,
+                buttons=lift_buttons,
+                x=0.38, y=1.10, xanchor="left", yanchor="top",
+                direction="down", showactive=True,
+                bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
+            ),
+        ],
         title=dict(
-            text=f"<b>{set_data['set_id']} — {joint_name.replace('_', ' ').title()} ({s1} & {s2}) | {lift_label}</b>",
-            x=0.5, y=0.98, font=dict(size=14),
+            text=f"<b>{set_data['set_id']} — {joint_name.replace('_', ' ').title()} ({s1_init} & {s2_init})</b>",
+            x=0.5, y=0.99, font=dict(size=14),
         ),
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_PUB_FONT,
-        height=680,
+        height=940,
         hovermode="x unified",
-        margin=dict(l=60, r=25, t=125, b=65),
-        legend=dict(orientation="h", y=-0.10, x=0.5, xanchor="center"),
+        margin=dict(l=65, r=25, t=165, b=65),
+        legend=dict(orientation="h", y=-0.06, x=0.5, xanchor="center"),
     )
-    for r in (1, 2):
-        for c in (1, 2):
-            fig.update_xaxes(
-                showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
-                ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
-                zeroline=False, row=r, col=c,
-            )
-            fig.update_yaxes(
-                showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
-                ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
-                zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=0.8, row=r, col=c,
-            )
+    for r in (1, 2, 3, 4):
+        fig.update_xaxes(
+            showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+            ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
+            zeroline=False, row=r, col=1,
+        )
+        fig.update_yaxes(
+            showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+            ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
+            zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=0.8, row=r, col=1,
+        )
+    fig.update_xaxes(range=init_x_range, row=4, col=1)
     fig.update_yaxes(title_text="Accel (m/s²)", row=1, col=1)
     fig.update_yaxes(title_text="Gyro (deg/s)", row=2, col=1)
-    fig.update_xaxes(title_text="Time (s)", row=2, col=1)
-    fig.update_xaxes(title_text="Time (s)", row=2, col=2)
+    fig.update_yaxes(title_text="Accel (m/s²)", row=3, col=1)
+    fig.update_yaxes(title_text="Gyro (deg/s)", row=4, col=1)
+    fig.update_xaxes(title_text="Time (s)", row=4, col=1)
     return fig
 
 
@@ -404,3 +474,4 @@ def launch_fault_logger(dataset_dir: str | Path, set_data: dict) -> None:
     display(ui)
     with out:
         _render_table()
+
