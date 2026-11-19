@@ -14,9 +14,6 @@ from .loader import (
 from .paper_figures import (
     build_paper_tables,
     plot_fig4_annotation_scheme,
-    plot_fig7_data_overview,
-    plot_fig8_completeness_and_plausibility,
-    plot_fig10_annotation_agreement,
 )
 from .plots import (
     plot_cohort_overview,
@@ -36,9 +33,6 @@ __all__ = [
     "load_summary_tables",
     "plot_cohort_overview",
     "plot_fig4_annotation_scheme",
-    "plot_fig7_data_overview",
-    "plot_fig8_completeness_and_plausibility",
-    "plot_fig10_annotation_agreement",
     "plot_joint_4panel",
     "plot_marker_agreement_summary",
     "plot_sensor_health_overview",
