@@ -447,93 +447,90 @@ def build_imu_quality_table(dataset_dir: str | Path) -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
-def plot_imu_validation_figure(dataset_dir: str | Path) -> go.Figure:
-    """Option 2: Compact 4-panel technical validation figure across all 54 Sets x 26 IMUs."""
+def _iqr_y_bounds(series: pd.Series, floor: float | None = None, pad_frac: float = 0.08) -> list[float] | None:
+    """Compute tight y-axis bounds covering all boxes/whiskers without extreme outliers."""
+    vals = series.dropna().to_numpy(dtype=float)
+    if len(vals) == 0:
+        return None
+    q1, q3 = float(np.percentile(vals, 25)), float(np.percentile(vals, 75))
+    iqr = max(q3 - q1, 1e-6)
+    lo = q1 - 2.0 * iqr
+    hi = q3 + 2.5 * iqr
+    if floor is not None:
+        lo = max(floor, lo)
+    span = max(hi - lo, 1e-6)
+    return [lo - pad_frac * span, hi + pad_frac * span]
+
+
+def plot_imu_validation_figure(dataset_dir: str | Path, show_outliers: bool = False) -> go.Figure:
+    """2-panel IMU technical validation figure: Static Accelerometer Norm & Static Gyroscope Bias."""
     data = _compute_dataset_imu_metrics(dataset_dir)
     df = data["df"]
     sensors = data["sensor_names"]
+    boxpoints = "outliers" if show_outliers else False
 
     fig = make_subplots(
         rows=2,
-        cols=2,
-        vertical_spacing=0.18,
-        horizontal_spacing=0.09,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.14,
         subplot_titles=(
-            "<b>(a) Data Completeness (% Valid Samples)</b>",
-            "<b>(b) Static Accelerometer Norm per IMU</b>",
-            "<b>(c) Static Gyroscope Bias per IMU</b>",
-            "<b>(d) Inter-IMU Synchronization Lag vs. US</b>",
+            "<b>(a) Static Accelerometer Norm per IMU</b>",
+            "<b>(b) Static Gyroscope Bias per IMU</b>",
         ),
     )
 
-    # Panel (a): Completeness heatmap
-    fig.add_trace(
-        go.Heatmap(
-            z=data["completeness_matrix"],
-            x=sensors,
-            y=data["set_ids"],
-            colorscale=_HEATMAP_SCALE,
-            zmin=0.0,
-            zmax=100.0,
-            colorbar=dict(title="% Valid", len=0.40, y=0.80, x=0.45),
-            hovertemplate="<b>%{y} · %{x}</b><br>Valid: %{z:.1f}%<extra></extra>",
-        ),
-        row=1, col=1,
-    )
-
-    # Panel (b): Static accelerometer norm boxplots (26 IMUs)
+    # Panel (a): Static accelerometer norm boxplots (26 IMUs)
     for code in sensors:
         vals = df[df["sensor_code"] == code]["static_acc_norm"].dropna()
         fig.add_trace(
-            go.Box(y=vals, name=code, marker_color=_PALETTE[0], showlegend=False, boxpoints="outliers"),
-            row=1, col=2,
+            go.Box(y=vals, name=code, marker_color=_PALETTE[0], showlegend=False, boxpoints=boxpoints),
+            row=1, col=1,
         )
-    fig.add_hline(y=9.81, line_dash="dash", line_color="#D55E00", annotation_text="9.81 m/s²", row=1, col=2)
+    fig.add_hline(y=9.81, line_dash="dash", line_color="#D55E00", annotation_text="9.81 m/s²", row=1, col=1)
 
-    # Panel (c): Static gyroscope bias boxplots (26 IMUs)
+    # Panel (b): Static gyroscope bias boxplots (26 IMUs)
     for code in sensors:
         vals = df[df["sensor_code"] == code]["static_gyr_bias"].dropna()
         fig.add_trace(
-            go.Box(y=vals, name=code, marker_color=_PALETTE[2], showlegend=False, boxpoints="outliers"),
+            go.Box(y=vals, name=code, marker_color=_PALETTE[2], showlegend=False, boxpoints=boxpoints),
             row=2, col=1,
         )
     fig.add_hline(y=0.0, line_dash="dash", line_color="#374151", row=2, col=1)
 
-    # Panel (d): Inter-IMU synchronization lag histogram (ms)
-    if len(data["lags_ms"]):
-        fig.add_trace(
-            go.Histogram(
-                x=data["lags_ms"],
-                nbinsx=25,
-                marker_color=_PALETTE[1],
-                marker_line=dict(width=0.8, color="#111827"),
-                showlegend=False,
-            ),
-            row=2, col=2,
-        )
-        fig.add_vline(x=0.0, line_dash="dash", line_color="#111827", row=2, col=2)
-
+    subtitle = (
+        "All outlier points shown"
+        if show_outliers
+        else "Zoomed to main distribution (outliers hidden; set show_outliers=True to display)"
+    )
     fig.update_layout(
         title=dict(
-            text="<b>Technical Validation of IMU Data (54 Sets × 26 Sensors = 1,404 Recordings)</b>",
-            x=0.5, y=0.98, font=dict(size=14),
+            text=(
+                "<b>Technical Validation of IMU Data (54 Sets × 26 Sensors = 1,404 Recordings)</b>"
+                f"<br><span style='font-size:11px;color:#4B5563'>{subtitle}</span>"
+            ),
+            x=0.5, y=0.97, font=dict(size=14),
         ),
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_FONT,
-        height=820,
-        margin=dict(l=70, r=25, t=75, b=75),
+        height=720,
+        margin=dict(l=75, r=30, t=85, b=80),
     )
-    _pub_axes(fig, rows=2, cols=2)
-    fig.update_xaxes(tickangle=-60, tickfont=dict(size=8), row=1, col=1)
-    fig.update_yaxes(autorange="reversed", tickfont=dict(size=7), row=1, col=1)
-    fig.update_xaxes(tickangle=-60, tickfont=dict(size=8), row=1, col=2)
-    fig.update_yaxes(title_text="Static |a| (m/s²)", row=1, col=2)
-    fig.update_xaxes(title_text="IMU Sensor", tickangle=-60, tickfont=dict(size=8), row=2, col=1)
+    _pub_axes(fig, rows=2, cols=1)
+    fig.update_yaxes(title_text="Static |a| (m/s²)", row=1, col=1)
+    fig.update_xaxes(title_text="IMU Sensor", tickangle=-45, tickfont=dict(size=9), showticklabels=True, row=2, col=1)
     fig.update_yaxes(title_text="Static |ω| (deg/s)", row=2, col=1)
-    fig.update_xaxes(title_text="Lag vs. US (ms)", row=2, col=2)
-    fig.update_yaxes(title_text="Recordings (count)", row=2, col=2)
+
+    if not show_outliers:
+        acc_range = _iqr_y_bounds(df["static_acc_norm"])
+        if acc_range is not None:
+            fig.update_yaxes(range=[min(acc_range[0], 8.5), max(acc_range[1], 11.0)], row=1, col=1)
+        gyr_range = _iqr_y_bounds(df["static_gyr_bias"], floor=0.0)
+        if gyr_range is not None:
+            fig.update_yaxes(range=[-0.5, max(gyr_range[1], 22.0)], row=2, col=1)
+
     return fig
 
 
