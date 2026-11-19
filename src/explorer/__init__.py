@@ -14,8 +14,10 @@ from .loader import (
 from .paper_figures import (
     build_imu_quality_table,
     build_paper_tables,
+    plot_all_sets_annotation_sd_heatmap,
     plot_fig4_annotation_scheme,
     plot_imu_validation_figure,
+    plot_set_annotator_grid,
 )
 from .plots import (
     plot_cohort_overview,
@@ -34,12 +36,14 @@ __all__ = [
     "launch_fault_logger",
     "load_set_h5",
     "load_summary_tables",
+    "plot_all_sets_annotation_sd_heatmap",
     "plot_cohort_overview",
     "plot_fig4_annotation_scheme",
     "plot_imu_validation_figure",
     "plot_joint_4panel",
     "plot_marker_agreement_summary",
     "plot_sensor_health_overview",
+    "plot_set_annotator_grid",
     "plot_set_imu_with_markers",
     "plot_set_sensor_status",
 ]

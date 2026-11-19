@@ -533,3 +533,129 @@ def plot_imu_validation_figure(dataset_dir: str | Path) -> go.Figure:
     fig.update_xaxes(title_text="Lag vs. US (ms)", row=2, col=2)
     fig.update_yaxes(title_text="Recordings (count)", row=2, col=2)
     return fig
+
+
+def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -> go.Figure:
+    """Plot a single Set's (lifts x annotators) x 12 markers grid colored by |deviation from mean| in ms,
+    with per-lift SD (ms) rows below each lift.
+    """
+    sd = load_set_h5(dataset_dir, set_id)
+    ann_df = sd["annotators_df"]
+    cons_df = sd["consensus_df"]
+    if ann_df.empty:
+        raise ValueError(f"No annotator records in {set_id}")
+
+    fps = 30.0
+    ms_per_frame = 1000.0 / fps
+    markers = [m for m in MARKER_ORDER if m in set(ann_df["marker_name"])]
+
+    mean_map = {
+        (int(r["lift_id"]), r["marker_name"]): float(r["mean_frame"])
+        for _, r in cons_df.iterrows()
+    }
+    sd_ms_map = {
+        (int(r["lift_id"]), r["marker_name"]): float(r["sd_ms"])
+        for _, r in cons_df.iterrows()
+    }
+
+    y_labels: list[str] = []
+    z_vals: list[list[float]] = []
+    text_vals: list[list[str]] = []
+
+    for lid in sorted(int(x) for x in ann_df["lift_id"].unique()):
+        sub = ann_df[ann_df["lift_id"] == lid]
+        for aid in sorted(sub["annotator_id"].unique()):
+            y_labels.append(f"L{lid} · {aid}")
+            row_z, row_txt = [], []
+            sub_a = sub[sub["annotator_id"] == aid].set_index("marker_name")
+            for m in markers:
+                if m in sub_a.index:
+                    f_val = int(sub_a.loc[m, "frame"])
+                    dev_ms = abs(f_val - mean_map.get((lid, m), float(f_val))) * ms_per_frame
+                    row_z.append(dev_ms)
+                    row_txt.append(f"{f_val} ({dev_ms:.0f}ms)")
+                else:
+                    row_z.append(np.nan)
+                    row_txt.append("NA")
+            z_vals.append(row_z)
+            text_vals.append(row_txt)
+
+        # Add SD (ms) summary row for this lift
+        y_labels.append(f"L{lid} · SD (ms)")
+        z_vals.append([sd_ms_map.get((lid, m), np.nan) for m in markers])
+        text_vals.append([f"{sd_ms_map.get((lid, m), np.nan):.0f}" for m in markers])
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_vals,
+            x=markers,
+            y=y_labels,
+            text=text_vals,
+            texttemplate="%{text}",
+            textfont=dict(size=9),
+            colorscale=[[0.0, "#009E73"], [0.35, "#E69F00"], [1.0, "#D55E00"]],
+            zmin=0.0,
+            zmax=300.0,
+            xgap=1,
+            ygap=1,
+            colorbar=dict(title="Dev / SD (ms)"),
+            hovertemplate="<b>%{y} · %{x}</b><br>%{text}<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=dict(text=f"<b>Annotator Grid & SD (ms) — {set_id}</b>", x=0.5, font=dict(size=14)),
+        xaxis_title="Phase Marker",
+        yaxis_title="Lift · Annotator / SD",
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=max(420, 26 * len(y_labels) + 140),
+        margin=dict(l=110, r=35, t=60, b=90),
+    )
+    _pub_axes(fig)
+    fig.update_xaxes(tickangle=-30)
+    fig.update_yaxes(autorange="reversed")
+    return fig
+
+
+def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
+    """Heatmap of inter-annotator SD (ms) across all (set_id, lift_id) x 12 phase markers."""
+    m_df = load_summary_tables(dataset_dir)["phase_markers"].copy()
+    if m_df.empty:
+        return go.Figure()
+
+    m_df["set_lift"] = m_df["set_id"].astype(str) + " · L" + m_df["lift_id"].astype(str)
+    markers = [m for m in MARKER_ORDER if m in set(m_df["marker_name"])]
+    pivot = m_df.pivot(index="set_lift", columns="marker_name", values="sd_ms")[markers]
+    # Keep chronological order by set_id, lift_id
+    order_df = m_df[["set_id", "lift_id", "set_lift"]].drop_duplicates().sort_values(["set_id", "lift_id"])
+    pivot = pivot.reindex(order_df["set_lift"].tolist())
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.to_numpy(),
+            x=list(pivot.columns),
+            y=list(pivot.index),
+            colorscale=[[0.0, "#009E73"], [0.4, "#E69F00"], [1.0, "#D55E00"]],
+            zmin=0.0,
+            zmax=300.0,
+            colorbar=dict(title="SD (ms)"),
+            hovertemplate="<b>%{y} · %{x}</b><br>SD: %{z:.1f} ms<extra></extra>",
+        )
+    )
+    fig.update_layout(
+        title=dict(text="<b>Inter-Annotator SD (ms) Across All Sets & Lifts</b>", x=0.5, font=dict(size=14)),
+        xaxis_title="Phase Marker",
+        yaxis_title="Set · Lift",
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=950,
+        margin=dict(l=110, r=35, t=60, b=95),
+    )
+    _pub_axes(fig)
+    fig.update_xaxes(tickangle=-30)
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=7))
+    return fig
