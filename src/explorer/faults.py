@@ -246,26 +246,35 @@ def plot_joint_4panel(
                 row=4, col=1,
             )
 
-    # Vertical dashed phase marker lines + staggered vertical text labels above Row 1
-    if not cons_df.empty:
-        for idx, (_, row) in enumerate(cons_df.iterrows()):
-            ts = float(row["time_s"])
-            label = f"L{int(row['lift_id'])}:{row['marker_name']}"
+    # Vertical dashed phase marker lines + hoverable marker pins (no static text clutter)
+    has_marker_trace = not cons_df.empty
+    if has_marker_trace:
+        marker_x = cons_df["time_s"].astype(float).tolist()
+        marker_text = [f"Lift {int(r['lift_id'])} · {r['marker_name']} (f={int(r['frame'])})" for _, r in cons_df.iterrows()]
+        for ts in marker_x:
             for r in (1, 2, 3, 4):
-                fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#6b7280", row=r, col=1)
-            fig.add_annotation(
-                x=ts, y=1.005, yref="paper", xref="x",
-                yshift=(idx % 2) * 28,
-                text=label, showarrow=False, textangle=-90,
-                xanchor="center", yanchor="bottom",
-                font=dict(size=8, color="#374151"),
-            )
+                fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#9ca3af", row=r, col=1)
+
+        y_pin = float(np.nanmax(acc_all)) if np.any(~np.isnan(acc_all)) else 10.0
+        fig.add_trace(
+            go.Scatter(
+                x=marker_x,
+                y=[y_pin] * len(marker_x),
+                mode="markers",
+                marker=dict(size=7, symbol="triangle-down", color="#374151"),
+                text=marker_text,
+                name="Phase Marker",
+                showlegend=False,
+                hovertemplate="<b>%{text}</b><br>Time: %{x:.3f} s<extra></extra>",
+            ),
+            row=1, col=1,
+        )
 
     # Dropdown 1: Switch Joint (instant client-side HTML/JS)
     joint_buttons = []
     for j_idx, j_key in enumerate(joint_keys):
         s1, s2 = JOINT_SENSOR_PAIRS[j_key]
-        vis = [False] * total_traces
+        vis = [False] * total_traces + ([True] if has_marker_trace else [])
         start_i = j_idx * traces_per_joint
         for k in range(start_i, start_i + traces_per_joint):
             vis[k] = True
@@ -318,29 +327,29 @@ def plot_joint_4panel(
             dict(
                 active=default_joint_idx,
                 buttons=joint_buttons,
-                x=0.0, y=1.22, xanchor="left", yanchor="top",
+                x=0.0, y=1.08, xanchor="left", yanchor="top",
                 direction="down", showactive=True,
                 bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
             ),
             dict(
                 active=active_lift_idx,
                 buttons=lift_buttons,
-                x=0.38, y=1.22, xanchor="left", yanchor="top",
+                x=0.38, y=1.08, xanchor="left", yanchor="top",
                 direction="down", showactive=True,
                 bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
             ),
         ],
         title=dict(
             text=f"<b>{set_data['set_id']} — {joint_name.replace('_', ' ').title()} ({s1_init} & {s2_init})</b>",
-            x=0.5, y=0.99, font=dict(size=14),
+            x=0.5, y=0.98, font=dict(size=14),
         ),
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_PUB_FONT,
-        height=980,
+        height=920,
         hovermode="x unified",
-        margin=dict(l=75, r=25, t=220, b=65),
+        margin=dict(l=75, r=25, t=115, b=65),
         legend=dict(orientation="h", y=-0.06, x=0.5, xanchor="center"),
     )
     for r in (1, 2, 3, 4):
