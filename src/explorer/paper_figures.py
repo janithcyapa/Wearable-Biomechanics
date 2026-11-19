@@ -537,24 +537,25 @@ def plot_imu_validation_figure(dataset_dir: str | Path) -> go.Figure:
     return fig
 
 
+_BLUE_TO_RED_SCALE = [
+    [0.00, "#EBF5FB"],
+    [0.25, "#AED6F1"],
+    [0.55, "#5DADE2"],
+    [0.80, "#FADBD8"],
+    [0.93, "#F1948A"],
+    [1.00, "#E74C3C"],
+]
+
+
 def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -> go.Figure:
-    """Plot a single Set's (lifts x annotators) x 12 markers grid colored by |deviation from mean| in ms,
-    with per-lift SD (ms) rows below each lift.
-    """
+    """Plot a single Set's annotator frames (uncolored) + SD (ms) rows (colored blue-to-red)."""
     sd = load_set_h5(dataset_dir, set_id)
     ann_df = sd["annotators_df"]
     cons_df = sd["consensus_df"]
     if ann_df.empty:
         raise ValueError(f"No annotator records in {set_id}")
 
-    fps = 30.0
-    ms_per_frame = 1000.0 / fps
     markers = [m for m in MARKER_ORDER if m in set(ann_df["marker_name"])]
-
-    mean_map = {
-        (int(r["lift_id"]), r["marker_name"]): float(r["mean_frame"])
-        for _, r in cons_df.iterrows()
-    }
     sd_ms_map = {
         (int(r["lift_id"]), r["marker_name"]): float(r["sd_ms"])
         for _, r in cons_df.iterrows()
@@ -568,24 +569,22 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
         sub = ann_df[ann_df["lift_id"] == lid]
         for aid in sorted(sub["annotator_id"].unique()):
             y_labels.append(f"L{lid} · {aid}")
-            row_z, row_txt = [], []
+            row_txt = []
             sub_a = sub[sub["annotator_id"] == aid].set_index("marker_name")
             for m in markers:
-                if m in sub_a.index:
-                    f_val = int(sub_a.loc[m, "frame"])
-                    dev_ms = abs(f_val - mean_map.get((lid, m), float(f_val))) * ms_per_frame
-                    row_z.append(dev_ms)
-                    row_txt.append(f"{f_val} ({dev_ms:.0f}ms)")
-                else:
-                    row_z.append(np.nan)
-                    row_txt.append("NA")
-            z_vals.append(row_z)
+                row_txt.append(str(int(sub_a.loc[m, "frame"])) if m in sub_a.index else "NA")
+            # Keep annotator rows uncolored (NaN -> neutral background)
+            z_vals.append([np.nan] * len(markers))
             text_vals.append(row_txt)
 
-        # Add SD (ms) summary row for this lift
-        y_labels.append(f"L{lid} · SD (ms)")
-        z_vals.append([sd_ms_map.get((lid, m), np.nan) for m in markers])
-        text_vals.append([f"{sd_ms_map.get((lid, m), np.nan):.0f}" for m in markers])
+        # Only color the SD (ms) row
+        y_labels.append(f"L{lid} · SD")
+        row_sd = [sd_ms_map.get((lid, m), np.nan) for m in markers]
+        z_vals.append(row_sd)
+        text_vals.append([f"{v:.0f}" if not np.isnan(v) else "NA" for v in row_sd])
+
+    flat_sd = [v for row in z_vals for v in row if not np.isnan(v)]
+    zmax = max(350.0, float(np.percentile(flat_sd, 99.5))) if flat_sd else 350.0
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -594,25 +593,25 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
             y=y_labels,
             text=text_vals,
             texttemplate="%{text}",
-            textfont=dict(size=9),
-            colorscale=_HEATMAP_SCALE_INV,
+            textfont=dict(size=9, color="#111827"),
+            colorscale=_BLUE_TO_RED_SCALE,
             zmin=0.0,
-            zmax=300.0,
+            zmax=zmax,
             xgap=1,
             ygap=1,
-            colorbar=dict(title="Dev / SD (ms)"),
-            hovertemplate="<b>%{y} · %{x}</b><br>%{text}<extra></extra>",
+            colorbar=dict(title="SD (ms)"),
+            hovertemplate="<b>%{y} · %{x}</b><br>Value: %{text}<extra></extra>",
         )
     )
     fig.update_layout(
-        title=dict(text=f"<b>Annotator Grid & SD (ms) — {set_id}</b>", x=0.5, font=dict(size=14)),
+        title=dict(text=f"<b>Annotator Frames & Inter-Annotator SD (ms) — {set_id}</b>", x=0.5, font=dict(size=14)),
         xaxis_title="Phase Marker",
-        yaxis_title="Lift · Annotator / SD",
+        yaxis_title="Lift · Annotator / SD (ms)",
         template="plotly_white",
         paper_bgcolor="white",
-        plot_bgcolor="white",
+        plot_bgcolor="#f8fafc",
         font=_FONT,
-        height=max(420, 26 * len(y_labels) + 140),
+        height=max(440, 26 * len(y_labels) + 140),
         margin=dict(l=110, r=35, t=60, b=90),
     )
     _pub_axes(fig)
@@ -630,18 +629,26 @@ def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
     m_df["set_lift"] = m_df["set_id"].astype(str) + " · L" + m_df["lift_id"].astype(str)
     markers = [m for m in MARKER_ORDER if m in set(m_df["marker_name"])]
     pivot = m_df.pivot(index="set_lift", columns="marker_name", values="sd_ms")[markers]
-    # Keep chronological order by set_id, lift_id
     order_df = m_df[["set_id", "lift_id", "set_lift"]].drop_duplicates().sort_values(["set_id", "lift_id"])
     pivot = pivot.reindex(order_df["set_lift"].tolist())
 
+    z_arr = pivot.to_numpy()
+    valid_z = z_arr[~np.isnan(z_arr)]
+    # Skew zmax near the top tail so only 1-2 extreme outliers turn red
+    zmax = max(400.0, float(np.percentile(valid_z, 99.5))) if len(valid_z) else 400.0
+
     fig = go.Figure(
         data=go.Heatmap(
-            z=pivot.to_numpy(),
+            z=z_arr,
             x=list(pivot.columns),
             y=list(pivot.index),
-            colorscale=_HEATMAP_SCALE_INV,
+            texttemplate="%{z:.0f}",
+            textfont=dict(size=8, color="#111827"),
+            colorscale=_BLUE_TO_RED_SCALE,
             zmin=0.0,
-            zmax=300.0,
+            zmax=zmax,
+            xgap=1,
+            ygap=1,
             colorbar=dict(title="SD (ms)"),
             hovertemplate="<b>%{y} · %{x}</b><br>SD: %{z:.1f} ms<extra></extra>",
         )
@@ -654,12 +661,12 @@ def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_FONT,
-        height=950,
-        margin=dict(l=110, r=35, t=60, b=95),
+        height=max(1400, 18 * len(pivot.index) + 180),
+        margin=dict(l=120, r=35, t=65, b=95),
     )
     _pub_axes(fig)
     fig.update_xaxes(tickangle=-30)
-    fig.update_yaxes(autorange="reversed", tickfont=dict(size=7))
+    fig.update_yaxes(autorange="reversed", tickfont=dict(size=8))
     return fig
 
 
