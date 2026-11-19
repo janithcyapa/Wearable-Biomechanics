@@ -1,4 +1,4 @@
-"""General OpenDatasetStore initialization and AG Grid interactive table display."""
+"""General OpenDatasetStore initialization and default DataFrame display."""
 
 from __future__ import annotations
 
@@ -23,54 +23,18 @@ def init_store(dataset_path: str = DEFAULT_DATASET_PATH):
 
 def display_table(
     df: pd.DataFrame,
-    page_length: int = 15,
     clean_columns: bool = True,
-    theme: str = "ag-theme-balham-dark",
-    height: int = 420,
-) -> None:
-    """Render an interactive AG Grid table (`ipyaggrid`) in dark theme.
-
-    Falls back to standard `IPython.display.display(df)` if `ipyaggrid` is not installed.
-    """
+) -> pd.DataFrame:
+    """Display a DataFrame using the environment's default renderer (Colab / IDE Data Wrangler)."""
     from IPython.display import display
 
     if df is None or df.empty:
         print("No records found.")
-        return
+        return df
 
     view_df = df.copy()
     if clean_columns:
         view_df.columns = [str(c).replace("_", " ").title() for c in view_df.columns]
 
-    try:
-        from ipyaggrid import Grid
-
-        grid_options = {
-            "columnDefs": [{"field": c} for c in view_df.columns],
-            "defaultColDef": {
-                "sortable": True,
-                "filter": True,
-                "resizable": True,
-                "floatingFilter": True,
-                "minWidth": 110,
-            },
-            "pagination": True,
-            "paginationPageSize": page_length,
-            "enableRangeSelection": True,
-        }
-        grid = Grid(
-            grid_data=view_df,
-            grid_options=grid_options,
-            theme=theme,
-            height=height,
-            quick_filter=True,
-            export_csv=True,
-            export_excel=False,
-            columns_fit="auto",
-        )
-        display(grid)
-        return
-    except ImportError:
-        pass
-
     display(view_df)
+    return view_df
