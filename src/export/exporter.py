@@ -151,6 +151,7 @@ def load_and_deduplicate_entries(
 def build_id_mapping_df(records: list[dict]) -> pd.DataFrame:
     """Build the private audit-trail DataFrame mapping new IDs back to legacy IDs."""
     rows = []
+    sample_h5_written = False
     for rec in records:
         rows.append(
             {
@@ -424,6 +425,24 @@ def _write_checksums(output_dir: Path) -> None:
     (output_dir / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def inspect_h5(h5_path: str | Path) -> None:
+    """Print the full group, attribute, and dataset structure of an exported .h5 file."""
+    h5_path = Path(h5_path)
+    print(f"\n📦 HDF5 Inspection: {h5_path} ({h5_path.stat().st_size / 1e6:.2f} MB)")
+    with h5py.File(h5_path, "r") as f:
+        def _visitor(name, obj):
+            indent = "  " * (name.count("/") + 1)
+            if isinstance(obj, h5py.Group):
+                print(f"{indent}📁 /{name}/")
+                for k, v in obj.attrs.items():
+                    print(f"{indent}   @{k} = {v!r}")
+            else:
+                attrs = {k: v for k, v in obj.attrs.items()}
+                attr_str = f" | attrs={attrs}" if attrs else ""
+                print(f"{indent}📄 /{name}  shape={obj.shape}  dtype={obj.dtype}{attr_str}")
+        f.visititems(_visitor)
+
+
 def clean_export_dir(output_dir: str | Path) -> None:
     """Remove all previously exported dataset files inside `output_dir` for a clean rebuild."""
     out_dir = Path(output_dir)
@@ -505,6 +524,7 @@ def export_dataset(
     if only_new and (out_dir / "phase_markers_summary.csv").exists():
         all_cons_dfs.append(pd.read_csv(out_dir / "phase_markers_summary.csv"))
 
+    sample_h5_written = False
     for rec in records:
         set_id = rec["_set_id"]
         if only_new and set_id in already_exported:
@@ -608,6 +628,22 @@ def export_dataset(
             f"has_faults={h5_set_row['has_faults']}"
             + (f" | faulty={faulty_str}" if sensor_faults else "")
         )
+
+        if dry_run and not sample_h5_written:
+            sample_h5_path = Path("/tmp") / f"dry_run_{set_id}.h5"
+            h5_meta = dict(h5_set_row)
+            h5_meta["imu_fs_hz"] = imu_fs
+            h5_part_meta = {k: v for k, v in part_lookup[rec["_participant_id"]].items() if k != "name"}
+            _write_set_h5(
+                sample_h5_path,
+                set_meta=h5_meta,
+                part_meta=h5_part_meta,
+                imu_arrays=imu_arrays,
+                cons_df=cons_df,
+                ann_df=ann_df,
+            )
+            inspect_h5(sample_h5_path)
+            sample_h5_written = True
 
         if not dry_run:
             h5_meta = dict(h5_set_row)

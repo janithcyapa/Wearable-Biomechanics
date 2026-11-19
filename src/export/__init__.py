@@ -4,6 +4,7 @@ from .exporter import (
     build_id_mapping_df,
     clean_export_dir,
     export_dataset,
+    inspect_h5,
     load_and_deduplicate_entries,
 )
 from .nomenclature import (
@@ -26,6 +27,7 @@ __all__ = [
     "build_id_mapping_df",
     "clean_export_dir",
     "export_dataset",
+    "inspect_h5",
     "load_and_deduplicate_entries",
     "standardize_imu_arrays",
 ]
