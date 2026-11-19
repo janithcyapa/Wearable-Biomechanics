@@ -29,6 +29,8 @@ Switch to the active dataset branch to work on the Clean & Jerk pipeline:
 git checkout cleannjerk_dataset
 ```
 
+> **Note:** Dataset storage and indexing rely on [`OpenDatasetStore`](https://github.com/janithcyapa/OpenDatasetStore) (local clone at `/home/jazz/Projects/OpenDatasetStore`). When using Plotly inside the IDE's Colab extension, set `pio.renderers.default = "vscode"` (or `"colab"` in the Colab web UI).
+
 To browse archived experiments and earlier code:
 
 ```bash

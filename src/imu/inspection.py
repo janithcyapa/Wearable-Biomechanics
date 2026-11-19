@@ -1,4 +1,4 @@
-"""IMU channel extraction, health diagnostics, and interactive Plotly dashboards."""
+"""IMU channel extraction, health diagnostics, and publication-grade Plotly/Matplotlib plots."""
 
 from __future__ import annotations
 
@@ -9,9 +9,60 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import seaborn as sns
+from matplotlib.colors import ListedColormap
 from plotly.subplots import make_subplots
 
 _IMU_CHANNEL_RE = re.compile(r"^.*?(?<!\d)(\d+)_IMU(\d+)_(AX|AY|AZ|GX|GY|GZ)$")
+
+# Colorblind-safe Okabe-Ito publication palette
+_PUB_PALETTE = [
+    "#0072B2",  # Blue
+    "#D55E00",  # Vermilion
+    "#009E73",  # Bluish green
+    "#CC79A7",  # Reddish purple
+    "#E69F00",  # Orange
+    "#56B4E9",  # Sky blue
+]
+
+_PUB_FONT = dict(family="Arial, Helvetica, sans-serif", size=12, color="#111827")
+
+
+def _apply_pub_axes(fig: go.Figure, rows: int = 1, cols: int = 1) -> None:
+    """Apply clean, high-contrast research-paper axis styling to all subplots."""
+    for r in range(1, rows + 1):
+        for c in range(1, cols + 1):
+            fig.update_xaxes(
+                showline=True,
+                linewidth=1.2,
+                linecolor="#1f2937",
+                mirror=True,
+                ticks="outside",
+                tickwidth=1,
+                tickcolor="#1f2937",
+                showgrid=True,
+                gridcolor="#e5e7eb",
+                gridwidth=0.7,
+                zeroline=False,
+                row=r,
+                col=c,
+            )
+            fig.update_yaxes(
+                showline=True,
+                linewidth=1.2,
+                linecolor="#1f2937",
+                mirror=True,
+                ticks="outside",
+                tickwidth=1,
+                tickcolor="#1f2937",
+                showgrid=True,
+                gridcolor="#e5e7eb",
+                gridwidth=0.7,
+                zeroline=True,
+                zerolinecolor="#d1d5db",
+                zerolinewidth=0.8,
+                row=r,
+                col=c,
+            )
 
 
 def get_columns(df: pd.DataFrame, devices=None, imus=None, axes=None) -> list[str]:
@@ -88,7 +139,7 @@ def get_sensor_health_summary(df: pd.DataFrame) -> pd.DataFrame:
 def plot_health_matrix(
     df: pd.DataFrame, title: str = "Sensor Channel Quality Matrix"
 ) -> None:
-    """Visualize all IMU channels as a status heatmap (OK / Clipped / NaNs / Flatline)."""
+    """Visualize all IMU channels as a publication-grade status matrix."""
     health_df = get_sensor_health_summary(df)
     if health_df.empty:
         print("No matching IMU channels detected.")
@@ -100,41 +151,66 @@ def plot_health_matrix(
     pivot = health_df.pivot(index="Device", columns="Channel", values="Score")
     pivot = pivot.reindex(sorted(pivot.index, key=lambda x: int(x.split()[1])))
 
-    plt.figure(figsize=(18, 5))
-    cmap = sns.color_palette(["#2ecc71", "#f39c12", "#e67e22", "#e74c3c"])
-    sns.heatmap(pivot, cmap=cmap, cbar=False, linewidths=0.5, linecolor="#eeeeee")
-
-    plt.title(
-        f"{title} (Green = OK, Orange = Clipped, Red = Flatlined/Dead)", fontsize=13
+    fig, ax = plt.subplots(figsize=(16, 4.5), dpi=180)
+    cmap = ListedColormap(["#009E73", "#E69F00", "#CC79A7", "#D55E00"])
+    sns.heatmap(
+        pivot,
+        ax=ax,
+        cmap=cmap,
+        vmin=0,
+        vmax=3,
+        cbar=True,
+        cbar_kws={"ticks": [0.375, 1.125, 1.875, 2.625]},
+        linewidths=0.6,
+        linecolor="#ffffff",
     )
-    plt.xlabel("IMU Axis Channels")
-    plt.ylabel("Devices")
+    cbar = ax.collections[0].colorbar
+    cbar.set_ticklabels(["OK", "Clipped", "NaNs", "Flatline"])
+    cbar.ax.tick_params(labelsize=9)
+
+    ax.set_title(title, fontsize=13, fontweight="bold", pad=10, color="#111827")
+    ax.set_xlabel("IMU Axis Channels", fontsize=11, fontweight="bold", labelpad=8)
+    ax.set_ylabel("Sensor Node", fontsize=11, fontweight="bold", labelpad=8)
     plt.xticks(rotation=90, fontsize=8)
+    plt.yticks(rotation=0, fontsize=9)
     plt.tight_layout()
     plt.show()
 
 
 def plot_quick_accel_check(df: pd.DataFrame, entry_id: str) -> go.Figure:
-    """Plot the first 3 accelerometer channels for a quick post-upload sanity check."""
+    """Plot the first 3 accelerometer channels in publication-grade styling."""
     accel_cols = [c for c in df.columns if "_AX" in c or "_AY" in c or "_AZ" in c][:3]
     fig = go.Figure()
-    for col in accel_cols:
-        fig.add_trace(go.Scatter(y=df[col], name=col, mode="lines"))
+    for idx, col in enumerate(accel_cols):
+        fig.add_trace(
+            go.Scatter(
+                y=df[col],
+                name=col,
+                mode="lines",
+                line=dict(width=1.4, color=_PUB_PALETTE[idx % len(_PUB_PALETTE)]),
+            )
+        )
 
     fig.update_layout(
-        title=f"Initial Data Check: {entry_id}",
-        xaxis_title="Samples",
+        title=dict(text=f"<b>Initial Accelerometer Check — {entry_id}</b>", x=0.5, font=dict(size=14)),
+        xaxis_title="Sample Index",
         yaxis_title="Acceleration (m/s²)",
-        template="plotly_dark",
-        height=400,
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_PUB_FONT,
+        height=380,
+        margin=dict(l=60, r=25, t=55, b=55),
+        legend=dict(orientation="h", y=1.02, yanchor="bottom", x=1.0, xanchor="right"),
     )
+    _apply_pub_axes(fig, rows=1, cols=1)
     return fig
 
 
 def plot_imu_verification_dashboard(
     df: pd.DataFrame, time_col: str = "Timestamp"
 ) -> go.Figure:
-    """Build an interactive Plotly dashboard with a Device dropdown and Violin plots."""
+    """Build a publication-grade interactive Plotly dashboard with Device switcher and Violin plots."""
     devices = sorted(
         {int(_IMU_CHANNEL_RE.match(c).group(1)) for c in df.columns if _IMU_CHANNEL_RE.match(c)}
     )
@@ -146,13 +222,13 @@ def plot_imu_verification_dashboard(
         cols=2,
         column_widths=[0.72, 0.28],
         shared_xaxes=False,
-        vertical_spacing=0.1,
-        horizontal_spacing=0.06,
+        vertical_spacing=0.12,
+        horizontal_spacing=0.07,
         subplot_titles=(
-            "Accelerometer Signals (AX, AY, AZ)",
-            "Accelerometer Distribution",
-            "Gyroscope Signals (GX, GY, GZ)",
-            "Gyroscope Distribution",
+            "<b>Accelerometer Time Series</b>",
+            "<b>Accel Distribution</b>",
+            "<b>Gyroscope Time Series</b>",
+            "<b>Gyro Distribution</b>",
         ),
     )
 
@@ -165,14 +241,15 @@ def plot_imu_verification_dashboard(
         gyro_cols = get_columns(df, devices=dev, axes=["GX", "GY", "GZ"])
         visible = dev == devices[0]
 
-        for col in acc_cols:
+        for idx, col in enumerate(acc_cols):
+            color = _PUB_PALETTE[idx % len(_PUB_PALETTE)]
             fig.add_trace(
                 go.Scatter(
                     x=t,
                     y=df[col],
                     name=col.split(f"{dev}_")[-1],
                     mode="lines",
-                    line=dict(width=1.2),
+                    line=dict(width=1.3, color=color),
                     legendgroup=f"dev_{dev}",
                     visible=visible,
                 ),
@@ -181,13 +258,15 @@ def plot_imu_verification_dashboard(
             )
             count += 1
 
-        for col in acc_cols:
+        for idx, col in enumerate(acc_cols):
+            color = _PUB_PALETTE[idx % len(_PUB_PALETTE)]
             fig.add_trace(
                 go.Violin(
                     y=df[col],
                     name=col.split(f"{dev}_")[-1],
                     box_visible=True,
                     meanline_visible=True,
+                    line_color=color,
                     legendgroup=f"dev_{dev}",
                     showlegend=False,
                     visible=visible,
@@ -197,14 +276,15 @@ def plot_imu_verification_dashboard(
             )
             count += 1
 
-        for col in gyro_cols:
+        for idx, col in enumerate(gyro_cols):
+            color = _PUB_PALETTE[idx % len(_PUB_PALETTE)]
             fig.add_trace(
                 go.Scatter(
                     x=t,
                     y=df[col],
                     name=col.split(f"{dev}_")[-1],
                     mode="lines",
-                    line=dict(width=1.2),
+                    line=dict(width=1.3, color=color),
                     legendgroup=f"dev_{dev}",
                     visible=visible,
                 ),
@@ -213,13 +293,15 @@ def plot_imu_verification_dashboard(
             )
             count += 1
 
-        for col in gyro_cols:
+        for idx, col in enumerate(gyro_cols):
+            color = _PUB_PALETTE[idx % len(_PUB_PALETTE)]
             fig.add_trace(
                 go.Violin(
                     y=df[col],
                     name=col.split(f"{dev}_")[-1],
                     box_visible=True,
                     meanline_visible=True,
+                    line_color=color,
                     legendgroup=f"dev_{dev}",
                     showlegend=False,
                     visible=visible,
@@ -244,7 +326,7 @@ def plot_imu_verification_dashboard(
                 method="update",
                 args=[
                     {"visible": visibility},
-                    {"title": f"IMU Verification Dashboard — Device {dev}"},
+                    {"title": f"<b>IMU Verification Dashboard — Device {dev}</b>"},
                 ],
             )
         )
@@ -255,25 +337,45 @@ def plot_imu_verification_dashboard(
                 active=0,
                 buttons=buttons,
                 x=0.0,
-                y=1.15,
+                y=1.13,
                 xanchor="left",
                 yanchor="top",
                 direction="down",
                 showactive=True,
+                bgcolor="#f9fafb",
+                bordercolor="#d1d5db",
+                borderwidth=1,
             )
         ],
-        title=dict(text=f"IMU Verification Dashboard — Device {devices[0]}", x=0.5, y=0.98),
-        height=850,
+        title=dict(
+            text=f"<b>IMU Verification Dashboard — Device {devices[0]}</b>",
+            x=0.5,
+            y=0.98,
+            font=dict(size=15),
+        ),
+        height=820,
         hovermode="x unified",
         template="plotly_white",
-        legend=dict(orientation="h", y=-0.12, x=0.0),
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_PUB_FONT,
+        margin=dict(l=65, r=25, t=95, b=80),
+        legend=dict(
+            orientation="h",
+            y=-0.11,
+            x=0.5,
+            xanchor="center",
+            bgcolor="rgba(255,255,255,0.9)",
+            bordercolor="#e5e7eb",
+            borderwidth=1,
+        ),
     )
 
-    fig.update_yaxes(title_text="Accel (m/s²)", row=1, col=1)
-    fig.update_yaxes(title_text="Value Range", row=1, col=2)
-    fig.update_yaxes(title_text="Gyro (°/s)", row=2, col=1)
-    fig.update_yaxes(title_text="Value Range", row=2, col=2)
+    _apply_pub_axes(fig, rows=2, cols=2)
+    fig.update_yaxes(title_text="Acceleration (m/s²)", row=1, col=1)
+    fig.update_yaxes(title_text="Range (m/s²)", row=1, col=2)
+    fig.update_yaxes(title_text="Angular Velocity (°/s)", row=2, col=1)
+    fig.update_yaxes(title_text="Range (°/s)", row=2, col=2)
     fig.update_xaxes(title_text="Timestamp / Sample", row=2, col=1)
 
     return fig
-
