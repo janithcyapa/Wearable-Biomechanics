@@ -56,7 +56,7 @@ DEVICE_SPEC: list[dict] = [
 
 SENSOR_ORDER: list[str] = [s["short_code"] for s in DEVICE_SPEC]
 
-_RAW_COL_RE = re.compile(r"^(?:device)?(\d+)_IMU(\d+)_(AX|AY|AZ|GX|GY|GZ)$")
+_RAW_COL_RE = re.compile(r"^.*?(?<!\d)(\d+)_IMU(\d+)_(AX|AY|AZ|GX|GY|GZ)$")
 
 
 def build_device_summary_df(sample_rate_hz: float = 100.0) -> pd.DataFrame:
@@ -223,3 +223,4 @@ def build_data_dictionary_df() -> pd.DataFrame:
         ("set_XXXX.h5:/imu_data", "axis_names", "str", "—", "Shape (3,) ['X', 'Y', 'Z'] matching axis 2"),
     ]
     return pd.DataFrame(rows, columns=["file", "field", "dtype", "unit", "description"])
+
