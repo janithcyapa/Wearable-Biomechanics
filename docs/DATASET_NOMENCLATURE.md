@@ -20,13 +20,13 @@
 | 2 | `setup` | `setup` | Start of Phase 2 | **P2 — `setup`** (`setup` → `first_pull`) |
 | 3 | `first_pull` | `first_pull` | Start of Phase 3 | **P3 — `first_pull`** (`first_pull` → `second_pull`) |
 | 4 | `second_pull` | `second_pull` | Start of Phase 4 | **P4 — `second_pull`** (`second_pull` → `clean`) |
-| 5 | `clean` | `clean` | Start of Phase 5 | **P5 — `clean`** (`clean` → `intermediate_rest`) |
-| 6 | `middle_rest` | `intermediate_rest` | Start of Phase 6 | **P6 — `intermediate_rest`** (`intermediate_rest` → `jerk_drive`) |
-| 7 | `jerk_phase_one` | `jerk_drive` | Start of Phase 7 | **P7 — `jerk_drive`** (`jerk_drive` → `jerk_catch`) |
-| 8 | `jerk_phase_two` | `jerk_catch` | Start of Phase 8 | **P8 — `jerk_catch`** (`jerk_catch` → `overhead_hold`) |
+| 5 | `clean` | `clean` | Start of Phase 5 | **P5 — `clean`** (`clean` → `rack_hold`) |
+| 6 | `middle_rest` | `rack_hold` | Start of Phase 6 | **P6 — `rack_hold`** (`rack_hold` → `jerk_split`) |
+| 7 | `jerk_phase_one` | `jerk_split` | Start of Phase 7 | **P7 — `jerk_split`** (`jerk_split` → `jerk_recovery`) |
+| 8 | `jerk_phase_two` | `jerk_recovery` | Start of Phase 8 | **P8 — `jerk_recovery`** (`jerk_recovery` → `overhead_hold`) |
 | 9 | `rest_up` | `overhead_hold` | Start of Phase 9 | **P9 — `overhead_hold`** (`overhead_hold` → `descend`) |
-| 10 | `bring_down` | `descend` | Start of Phase 10 | **P10 — `descend`** (`descend` → `recovery`) |
-| 11 | `end_rest` | `recovery` | Start of Phase 11 | **P11 — `recovery`** (`recovery` → `end`) |
+| 10 | `bring_down` | `descend` | Start of Phase 10 | **P10 — `descend`** (`descend` → `post_rest`) |
+| 11 | `end_rest` | `post_rest` | Start of Phase 11 | **P11 — `post_rest`** (`post_rest` → `end`) |
 | 12 | `end_rep` | `end` | End of Phase 11 & Lift | — |
 
 ---
