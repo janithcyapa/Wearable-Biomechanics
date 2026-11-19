@@ -186,16 +186,19 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `end_s` | `float` | `s` | End time in seconds |
 | `description` | `str` | — | Specific free-text description of the fault |
 
-### 4.6 `/phase_markers_summary.csv`
+### 4.6 `/phase_markers_summary.csv` (Consensus & Inter-Annotator Agreement)
 | Column | Type | Unit | Description |
 | --- | --- | --- | --- |
 | `set_id` | `str` | — | Foreign key to `sets_summary.csv` |
 | `lift_id` | `int` | — | 1-based lift index within the Set (`1..lifts_total`) |
 | `marker_name` | `str` | — | One of the 12 standardized markers (`start`..`end`) |
-| `annotator_id` | `str` | — | `consensus` or individual annotator ID (`a1`..`a15`) |
-| `frame` | `int` | `frames` | Video frame index (at `video_fps`) |
-| `imu_idx` | `int` | `samples` | Synchronized 100 Hz IMU sample index |
-| `time_s` | `float` | `s` | Synchronized timestamp (`imu_idx / imu_fs_hz`) |
+| `n_annotators` | `int` | `count` | Number of annotators for this marker |
+| `mean_frame` | `float` | `frames` | Mean frame across annotators |
+| `sd_frames` | `float` | `frames` | Inter-annotator standard deviation in frames (`ddof=1`) |
+| `sd_ms` | `float` | `ms` | Inter-annotator standard deviation in milliseconds |
+| `frame` | `int` | `frames` | Final consensus video frame (`round(mean_frame)`) |
+| `imu_idx` | `int` | `samples` | Final synchronized 100 Hz IMU sample index |
+| `time_s` | `float` | `s` | Final synchronized timestamp (`imu_idx / imu_fs_hz`) |
 
 ### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema — Exact 1:1 Match with Summary CSVs)
 - **`/metadata` (Group Attributes — exact match with `sets_summary.csv`):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `imu_samples`, `duration_s`, `sensors_ok`, `sensors_total`, `has_faults`
@@ -219,12 +222,23 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
   - `sensor_names`: `(26,)` `S4` (`["RKP", "RHD", ..., "US"]` in canonical order)
   - `axis_names`: `(3,)` `S2` (`["X", "Y", "Z"]`)
 - **`/phase_markers/` (Group):**
-  - `lift_id`: `(M,)` `int32`
-  - `marker_name`: `(M,)` `S20`
-  - `annotator_id`: `(M,)` `S16`
-  - `frame`: `(M,)` `int32`
-  - `imu_idx`: `(M,)` `int32`
-  - `time_s`: `(M,)` `float64`
+  - **`consensus/`** (exact 1:1 match with `phase_markers_summary.csv` for this `set_id`):
+    - `lift_id`: `(C,)` `int32`
+    - `marker_name`: `(C,)` `S20`
+    - `n_annotators`: `(C,)` `int32`
+    - `mean_frame`: `(C,)` `float64`
+    - `sd_frames`: `(C,)` `float64`
+    - `sd_ms`: `(C,)` `float64`
+    - `frame`: `(C,)` `int32`
+    - `imu_idx`: `(C,)` `int32`
+    - `time_s`: `(C,)` `float64`
+  - **`annotators/`** (complete individual annotator records):
+    - `lift_id`: `(M,)` `int32`
+    - `marker_name`: `(M,)` `S20`
+    - `annotator_id`: `(M,)` `S16` (`a1`..`a15`)
+    - `frame`: `(M,)` `int32`
+    - `imu_idx`: `(M,)` `int32`
+    - `time_s`: `(M,)` `float64`
 
 ### 4.8 `/videos/` & `/checksums.sha256`
 - **`/videos/set_XXXX_front.mp4` & `set_XXXX_side.mp4`**: H.264 (`libx264`), `yuv420p`, `30.0 fps` (matching `video_fps` in `sets_summary.csv`).
