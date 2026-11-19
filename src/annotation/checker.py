@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 from IPython.display import HTML, display
 
-from wearable_biomechanics.annotation.player import PHASES
+from .player import PHASES
 
 _COL_W = "94px"
 _LABEL_W = "145px"

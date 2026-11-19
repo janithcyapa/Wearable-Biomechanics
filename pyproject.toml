@@ -24,6 +24,13 @@ dependencies = [
 sync = ["ultralytics", "torch"]
 dev = ["pytest"]
 
-[tool.setuptools.packages.find]
-where = ["src"]
+[tool.setuptools]
+packages = [
+    "wearable_biomechanics",
+    "wearable_biomechanics.imu",
+    "wearable_biomechanics.sync",
+    "wearable_biomechanics.annotation",
+]
 
+[tool.setuptools.package-dir]
+wearable_biomechanics = "src"

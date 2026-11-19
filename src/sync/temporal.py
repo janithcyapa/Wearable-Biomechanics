@@ -10,7 +10,7 @@ import pandas as pd
 import plotly.graph_objects as go
 from scipy import signal
 
-from wearable_biomechanics.sync.video import MOTION_KEYPOINTS
+from .video import MOTION_KEYPOINTS
 
 
 def extract_movement_signal(df: pd.DataFrame, prepend_first: bool = False) -> np.ndarray:

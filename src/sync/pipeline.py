@@ -8,11 +8,11 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-from wearable_biomechanics.sync.temporal import (
+from .temporal import (
     calculate_front_to_raw_sync_lag,
     calculate_sync_lag,
 )
-from wearable_biomechanics.sync.video import (
+from .video import (
     analyze_keypoints,
     ensure_30fps_video,
     generate_annotated_video,

@@ -1,6 +1,6 @@
 """Wearable Biomechanics general-purpose Python library."""
 
-from wearable_biomechanics.store import (
+from .store import (
     DEFAULT_DATASET_PATH,
     display_table,
     init_store,

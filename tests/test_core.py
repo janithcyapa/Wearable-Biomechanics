@@ -3,13 +3,13 @@
 import numpy as np
 import pandas as pd
 
-from wearable_biomechanics.annotation import PHASES, new_rep_template, tag_for
-from wearable_biomechanics.imu import get_columns, get_sensor_health_summary
-from wearable_biomechanics.sync.temporal import (
+from src.annotation import PHASES, new_rep_template, tag_for
+from src.imu import get_columns, get_sensor_health_summary
+from src.sync.temporal import (
     calculate_front_to_raw_sync_lag,
     calculate_sync_lag,
 )
-from wearable_biomechanics.sync.video import MOTION_KEYPOINTS
+from src.sync.video import MOTION_KEYPOINTS
 
 
 def test_get_columns_and_health_summary():

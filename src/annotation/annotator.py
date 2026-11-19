@@ -7,7 +7,7 @@ import json
 import pandas as pd
 from IPython.display import display
 
-from wearable_biomechanics.annotation.player import PHASES, new_rep_template, tag_for
+from .player import PHASES, new_rep_template, tag_for
 
 
 def launch_rep_annotator(

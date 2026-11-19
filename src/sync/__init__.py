@@ -1,6 +1,6 @@
 """Video pose extraction and temporal synchronization utilities."""
 
-from wearable_biomechanics.sync.pipeline import (
+from .pipeline import (
     run_batch_front_to_raw_sync,
     run_batch_visual_estimation,
     run_single_experiment,
@@ -8,11 +8,11 @@ from wearable_biomechanics.sync.pipeline import (
     sync_front_to_raw_experiment,
     visual_estimation_pipeline,
 )
-from wearable_biomechanics.sync.temporal import (
+from .temporal import (
     calculate_front_to_raw_sync_lag,
     calculate_sync_lag,
 )
-from wearable_biomechanics.sync.video import (
+from .video import (
     KEYPOINT_NAMES,
     MOTION_KEYPOINTS,
     SKELETON_INDICES,
