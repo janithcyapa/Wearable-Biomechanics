@@ -100,10 +100,11 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 ### 3.2 HDF5 Layout (`/sets/set_XXXX.h5`)
 
 ```text
-/metadata                       attrs
-/participant_metadata           attrs of participant
+/metadata                       attrs (exact 1:1 match with sets_summary.csv row)
+/participant_metadata           attrs (exact 1:1 match with participant_summary.csv row)
 /imu_data
 /phase_markers
+/fault_log                      datasets matching fault_log.csv for this Set
 ```
 
 ### 3.3 File Format Standards
@@ -196,9 +197,20 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `imu_idx` | `int` | `samples` | Synchronized 100 Hz IMU sample index |
 | `time_s` | `float` | `s` | Synchronized timestamp (`imu_idx / imu_fs_hz`) |
 
-### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema)
-- **`/metadata` (Group Attributes):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `tier`, `view_mode`, `video_fps`, `imu_fs_hz`, `imu_samples`, `duration_s`, `sync_corr_r`
-- **`/participant_metadata` (Group Attributes):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `experience_years`
+### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema — Exact 1:1 Match with Summary CSVs)
+- **`/metadata` (Group Attributes — exact match with `sets_summary.csv`):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `imu_samples`, `duration_s`, `sensors_ok`, `sensors_total`, `has_faults`
+- **`/participant_metadata` (Group Attributes — exact match with `participant_summary.csv`):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `bmi_kg_m2`, `experience_years`, `achievement`, `best_weight_kg`
+- **`/fault_log/` (Group — exact match with `fault_log.csv` filtered to this `set_id`, empty arrays if `has_faults=False`):**
+  - `fault_id`: `(K,)` `S16`
+  - `set_id`: `(K,)` `S16`
+  - `sensor_code`: `(K,)` `S16`
+  - `fault_type`: `(K,)` `S24`
+  - `severity`: `(K,)` `S16`
+  - `start_imu_idx`: `(K,)` `int32`
+  - `end_imu_idx`: `(K,)` `int32`
+  - `start_s`: `(K,)` `float64`
+  - `end_s`: `(K,)` `float64`
+  - `description`: `(K,)` UTF-8 string (`h5py.string_dtype()`)
 - **`/imu_data/` (Group):**
   - `accel`: `(N, 26, 3)` `float32`, `units="m/s^2"`, `sample_rate_hz=100.0`
   - `gyro`: `(N, 26, 3)` `float32`, `units="deg/s"`, `sample_rate_hz=100.0`
