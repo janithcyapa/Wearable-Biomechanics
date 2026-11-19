@@ -746,94 +746,61 @@ def build_annotation_agreement_table(
     return out_df
 
 
-def plot_annotation_agreement_figure(
-    dataset_dir: str | Path,
-    log_x_ecdf: bool = False,
-) -> go.Figure:
-    """Two-panel agreement figure: (a) pooled SD histogram with median & 95th pct, (b) ECDF per marker."""
+def plot_annotation_agreement_figure(dataset_dir: str | Path) -> go.Figure:
+    """Single-panel normalized histogram (sum=1) of pooled inter-annotator SD with Median, 95th & 99th pct."""
     m_df = load_summary_tables(dataset_dir)["phase_markers"].copy()
     all3 = m_df[m_df["n_annotators"] >= 3].dropna(subset=["sd_ms"])
     sd_all = all3["sd_ms"].to_numpy(dtype=float)
 
-    fig = make_subplots(
-        rows=1,
-        cols=2,
-        horizontal_spacing=0.10,
-        subplot_titles=(
-            "<b>(a) Pooled Inter-Annotator SD Distribution</b>",
-            "<b>(b) Cumulative Distribution (ECDF) per Marker</b>",
-        ),
-    )
-
+    fig = go.Figure()
     if len(sd_all):
         med = float(np.median(sd_all))
         p95 = float(np.percentile(sd_all, 95))
+        p99 = float(np.percentile(sd_all, 99))
 
         fig.add_trace(
             go.Histogram(
                 x=sd_all,
-                nbinsx=40,
+                nbinsx=45,
+                histnorm="probability",
                 marker_color=_PALETTE[0],
-                marker_line=dict(width=0.7, color="#111827"),
+                marker_line=dict(width=0.7, color="#1f2937"),
                 name="All markers",
                 showlegend=False,
-            ),
-            row=1, col=1,
+                hovertemplate="SD: %{x:.1f} ms<br>Proportion: %{y:.3f}<extra></extra>",
+            )
         )
-        fig.add_vline(
-            x=med, line_width=2, line_dash="solid", line_color="#D55E00",
-            annotation_text=f"Median: {med:.1f} ms", annotation_position="top right",
-            row=1, col=1,
-        )
-        fig.add_vline(
-            x=p95, line_width=2, line_dash="dash", line_color="#111827",
-            annotation_text=f"95th pct: {p95:.1f} ms", annotation_position="top right",
-            row=1, col=1,
-        )
-
-    present = [m for m in MARKER_ORDER if m in set(all3["marker_name"])]
-    dash_styles = ["solid", "dash", "dot", "dashdot"]
-    for idx, marker in enumerate(present):
-        vals = np.sort(all3[all3["marker_name"] == marker]["sd_ms"].to_numpy(dtype=float))
-        if len(vals) == 0:
-            continue
-        x_vals = np.maximum(vals, 1.0) if log_x_ecdf else vals
-        y_vals = np.arange(1, len(vals) + 1) / len(vals) * 100.0
-        fig.add_trace(
-            go.Scatter(
-                x=x_vals,
-                y=y_vals,
-                mode="lines",
-                name=marker,
-                line=dict(
-                    width=1.6,
-                    color=_PALETTE[idx % len(_PALETTE)],
-                    dash=dash_styles[(idx // len(_PALETTE)) % len(dash_styles)],
-                ),
-            ),
-            row=1, col=2,
-        )
+        for val, lbl, dash, color, y_pos in [
+            (med, f"Median: {med:.1f} ms", "solid", "#E08B63", 0.95),
+            (p95, f"95th pct: {p95:.1f} ms", "dash", "#374151", 0.83),
+            (p99, f"99th pct: {p99:.1f} ms", "dot", "#E74C3C", 0.71),
+        ]:
+            fig.add_vline(x=val, line_width=2, line_dash=dash, line_color=color)
+            fig.add_annotation(
+                x=val,
+                y=y_pos,
+                yref="paper",
+                text=f"<b>{lbl}</b>",
+                showarrow=False,
+                xanchor="left",
+                xshift=6,
+                font=dict(size=10, color=color),
+                bgcolor="rgba(255,255,255,0.85)",
+            )
 
     fig.update_layout(
         title=dict(
-            text="<b>Inter-Annotator Agreement of Event Markers (3 Annotators/Set, 54 Sets)</b>",
-            x=0.5, y=0.98, font=dict(size=14),
+            text="<b>Pooled Inter-Annotator SD Distribution (Normalized to Total = 1)</b>",
+            x=0.5, y=0.96, font=dict(size=14),
         ),
+        xaxis_title="Inter-Annotator SD (ms)",
+        yaxis_title="Proportion of Marker Instances",
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_FONT,
-        height=470,
-        margin=dict(l=65, r=25, t=75, b=85),
-        legend=dict(orientation="h", y=-0.20, x=0.5, xanchor="center", font=dict(size=10)),
+        height=440,
+        margin=dict(l=65, r=25, t=65, b=55),
     )
-    _pub_axes(fig, rows=1, cols=2)
-    fig.update_xaxes(title_text="Inter-Annotator SD (ms)", row=1, col=1)
-    fig.update_yaxes(title_text="Marker Instances (count)", row=1, col=1)
-    fig.update_xaxes(
-        title_text="Inter-Annotator SD (ms)" + (" [log]" if log_x_ecdf else ""),
-        type="log" if log_x_ecdf else "linear",
-        row=1, col=2,
-    )
-    fig.update_yaxes(title_text="Cumulative Instances (%)", range=[0, 102], row=1, col=2)
+    _pub_axes(fig)
     return fig
