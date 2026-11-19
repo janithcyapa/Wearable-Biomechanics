@@ -111,6 +111,6 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | Artifact | Format | Notes |
 | --- | --- | --- |
 | Summary & dictionary tables | **CSV (UTF-8, no index)** | Journal-standard, human-readable, compatible with Python/R/Excel. |
-| Per-Set multi-modal data | **HDF5 (`.h5`, `gzip` level 4)** | Separates `accel` (`m/s^2`) and `gyro` (`deg/s`), stores `pose` and `phase_markers` with pre-computed `imu_idx` and `time_s`. |
+| Per-Set multi-modal data | **HDF5 (`.h5`, `gzip` level 4)** | Bundles `/metadata`, `/participant_metadata`, `/imu_data`, and `/phase_markers` with pre-computed `imu_idx` and `time_s`. |
 | Video files | **MP4 (`libx264`, `yuv420p`)** | Universal playback and OpenCV/FFmpeg compatibility. |
 | Integrity manifest | **SHA-256 (`checksums.sha256`)** | Verifiable via `sha256sum -c checksums.sha256`. |
