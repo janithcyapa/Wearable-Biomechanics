@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "wearable-biomechanics"
+version = "0.1.0"
+description = "Wearable Biomechanics dataset management, synchronization, pose estimation, and annotation tools."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "numpy",
+    "pandas",
+    "scipy",
+    "plotly",
+    "matplotlib",
+    "seaborn",
+    "ipywidgets",
+    "itables",
+    "opencv-python",
+]
+
+[project.optional-dependencies]
+sync = ["ultralytics", "torch"]
+dev = ["pytest"]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
