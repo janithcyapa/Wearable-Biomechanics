@@ -366,3 +366,4 @@ def plot_set_imu_with_markers(
     fig.update_yaxes(title_text="Gyro (deg/s)", row=2, col=1)
     fig.update_xaxes(title_text="Time (s)", row=2, col=1)
     return fig
+
