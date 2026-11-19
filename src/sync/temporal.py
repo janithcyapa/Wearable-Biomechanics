@@ -12,6 +12,33 @@ from scipy import signal
 
 from .video import MOTION_KEYPOINTS
 
+_PUB_FONT = dict(family="Arial, Helvetica, sans-serif", size=12, color="#111827")
+_PUB_COLORS = ("#0072B2", "#D55E00")
+
+
+def _style_pub_fig(fig: go.Figure, title: str, x_title: str, y_title: str) -> None:
+    fig.update_layout(
+        title=dict(text=f"<b>{title}</b>", x=0.5, font=dict(size=14)),
+        xaxis_title=x_title,
+        yaxis_title=y_title,
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_PUB_FONT,
+        height=380,
+        margin=dict(l=60, r=25, t=55, b=55),
+        legend=dict(orientation="h", y=1.02, yanchor="bottom", x=1.0, xanchor="right"),
+    )
+    fig.update_xaxes(
+        showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+        ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7, zeroline=False,
+    )
+    fig.update_yaxes(
+        showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+        ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
+        zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=0.8,
+    )
+
 
 def extract_movement_signal(df: pd.DataFrame, prepend_first: bool = False) -> np.ndarray:
     """Compute a 1-D movement energy signal from COCO body keypoints."""
@@ -61,10 +88,10 @@ def calculate_sync_lag(front_df: pd.DataFrame, side_df: pd.DataFrame, plot: bool
 
     if plot:
         fig1 = go.Figure()
-        fig1.add_trace(go.Scatter(y=sig_front_norm, mode="lines", name="Front Movement", opacity=0.8))
-        fig1.add_trace(go.Scatter(y=sig_side_norm, mode="lines", name="Side Movement", opacity=0.8))
-        fig1.update_layout(title="Original Un-Synced Movement Signals", template="plotly_dark", height=400)
-        fig1.show()
+        fig1.add_trace(go.Scatter(y=sig_front_norm, mode="lines", name="Front Movement", line=dict(width=1.4, color=_PUB_COLORS[0])))
+        fig1.add_trace(go.Scatter(y=sig_side_norm, mode="lines", name="Side Movement", line=dict(width=1.4, color=_PUB_COLORS[1])))
+        _style_pub_fig(fig1, "Original Un-Synced Movement Signals", "Frame Index", "Normalized Energy (Z-score)")
+        fig1.show(config={"toImageButtonOptions": {"format": "png", "scale": 3}})
 
         fig2 = go.Figure()
         if best_lag > 0:
@@ -74,14 +101,10 @@ def calculate_sync_lag(front_df: pd.DataFrame, side_df: pd.DataFrame, plot: bool
             x1 = np.arange(len(sig_front_norm)) - best_lag
             x2 = np.arange(len(sig_side_norm))
 
-        fig2.add_trace(go.Scatter(x=x1, y=sig_front_norm, mode="lines", name="Front Movement (Synced)", opacity=0.8))
-        fig2.add_trace(go.Scatter(x=x2, y=sig_side_norm, mode="lines", name="Side Movement (Synced)", opacity=0.8))
-        fig2.update_layout(
-            title=f"Aligned Movement Signals (Side Lag: {best_lag} frames)",
-            template="plotly_dark",
-            height=400,
-        )
-        fig2.show()
+        fig2.add_trace(go.Scatter(x=x1, y=sig_front_norm, mode="lines", name="Front Movement (Synced)", line=dict(width=1.4, color=_PUB_COLORS[0])))
+        fig2.add_trace(go.Scatter(x=x2, y=sig_side_norm, mode="lines", name="Side Movement (Synced)", line=dict(width=1.4, color=_PUB_COLORS[1])))
+        _style_pub_fig(fig2, f"Aligned Movement Signals (Side Lag: {best_lag} frames)", "Aligned Frame Index", "Normalized Energy (Z-score)")
+        fig2.show(config={"toImageButtonOptions": {"format": "png", "scale": 3}})
 
     return best_lag
 
@@ -185,8 +208,8 @@ def calculate_front_to_raw_sync_lag(
                 x=np.arange(len(sig_front_norm)),
                 y=sig_front_norm,
                 mode="lines",
-                name=f"Front Video Movement ({int(final_fps)}Hz)",
-                opacity=0.85,
+                name=f"Front Video ({int(final_fps)} Hz)",
+                line=dict(width=1.4, color=_PUB_COLORS[0]),
             )
         )
         fig.add_trace(
@@ -194,21 +217,17 @@ def calculate_front_to_raw_sync_lag(
                 x=np.arange(len(sig_raw_norm)) + best_lag_frames,
                 y=sig_raw_norm,
                 mode="lines",
-                name=f"Raw IMU Accel Movement (Aligned {int(final_fps)}Hz)",
-                opacity=0.85,
+                name=f"Raw IMU Accel ({int(final_fps)} Hz)",
+                line=dict(width=1.4, color=_PUB_COLORS[1]),
             )
         )
-        fig.update_layout(
-            title=(
-                f"Aligned Movement Signals — Accelerometer | Detected Video: {int(final_fps)}Hz | "
-                f"Lag: {best_lag_frames:+d} frames ({best_lag_sec:+.3f}s) | r = {corr_r:.3f}"
-            ),
-            xaxis_title=f"Front Video Frame Index ({int(final_fps)}Hz)",
-            yaxis_title="Normalized Movement Energy (Z-score)",
-            template="plotly_dark",
-            height=400,
+        _style_pub_fig(
+            fig,
+            f"Aligned Movement Signals — {int(final_fps)} Hz | Lag: {best_lag_frames:+d} frames ({best_lag_sec:+.3f}s) | r = {corr_r:.3f}",
+            f"Front Video Frame Index ({int(final_fps)} Hz)",
+            "Normalized Movement Energy (Z-score)",
         )
-        fig.show()
+        fig.show(config={"toImageButtonOptions": {"format": "png", "scale": 3}})
 
     return {
         "video_fps": final_fps,
