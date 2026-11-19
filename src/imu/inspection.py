@@ -1,15 +1,12 @@
-"""IMU channel extraction, health diagnostics, and publication-grade Plotly/Matplotlib plots."""
+"""IMU channel extraction, health diagnostics, and publication-grade Plotly plots."""
 
 from __future__ import annotations
 
 import re
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
-import seaborn as sns
-from matplotlib.colors import ListedColormap
 from plotly.subplots import make_subplots
 
 _IMU_CHANNEL_RE = re.compile(r"^.*?(?<!\d)(\d+)_IMU(\d+)_(AX|AY|AZ|GX|GY|GZ)$")
@@ -138,12 +135,12 @@ def get_sensor_health_summary(df: pd.DataFrame) -> pd.DataFrame:
 
 def plot_health_matrix(
     df: pd.DataFrame, title: str = "Sensor Channel Quality Matrix"
-) -> None:
-    """Visualize all IMU channels as a publication-grade status matrix."""
+) -> go.Figure | None:
+    """Visualize all IMU channels as a publication-grade Plotly status matrix."""
     health_df = get_sensor_health_summary(df)
     if health_df.empty:
         print("No matching IMU channels detected.")
-        return
+        return None
 
     status_map = {"OK": 0, "CLIPPED": 1, "NANS": 2, "FLATLINE": 3}
     health_df["Score"] = health_df["Status"].map(status_map)
@@ -151,30 +148,67 @@ def plot_health_matrix(
     pivot = health_df.pivot(index="Device", columns="Channel", values="Score")
     pivot = pivot.reindex(sorted(pivot.index, key=lambda x: int(x.split()[1])))
 
-    fig, ax = plt.subplots(figsize=(16, 4.5), dpi=180)
-    cmap = ListedColormap(["#009E73", "#E69F00", "#CC79A7", "#D55E00"])
-    sns.heatmap(
-        pivot,
-        ax=ax,
-        cmap=cmap,
-        vmin=0,
-        vmax=3,
-        cbar=True,
-        cbar_kws={"ticks": [0.375, 1.125, 1.875, 2.625]},
-        linewidths=0.6,
-        linecolor="#ffffff",
-    )
-    cbar = ax.collections[0].colorbar
-    cbar.set_ticklabels(["OK", "Clipped", "NaNs", "Flatline"])
-    cbar.ax.tick_params(labelsize=9)
+    status_pivot = health_df.pivot(index="Device", columns="Channel", values="Status").reindex(pivot.index)
 
-    ax.set_title(title, fontsize=13, fontweight="bold", pad=10, color="#111827")
-    ax.set_xlabel("IMU Axis Channels", fontsize=11, fontweight="bold", labelpad=8)
-    ax.set_ylabel("Sensor Node", fontsize=11, fontweight="bold", labelpad=8)
-    plt.xticks(rotation=90, fontsize=8)
-    plt.yticks(rotation=0, fontsize=9)
-    plt.tight_layout()
-    plt.show()
+    # Discrete 4-bin colorscale matching Okabe-Ito status colors
+    colorscale = [
+        [0.00, "#009E73"], [0.25, "#009E73"],
+        [0.25, "#E69F00"], [0.50, "#E69F00"],
+        [0.50, "#CC79A7"], [0.75, "#CC79A7"],
+        [0.75, "#D55E00"], [1.00, "#D55E00"],
+    ]
+
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=pivot.to_numpy(),
+            x=list(pivot.columns),
+            y=list(pivot.index),
+            customdata=status_pivot.to_numpy(),
+            hovertemplate="<b>%{y} · %{x}</b><br>Status: %{customdata}<extra></extra>",
+            colorscale=colorscale,
+            zmin=0,
+            zmax=3,
+            xgap=1,
+            ygap=1,
+            colorbar=dict(
+                title=dict(text="Status", font=dict(size=11)),
+                tickvals=[0.375, 1.125, 1.875, 2.625],
+                ticktext=["OK", "Clipped", "NaNs", "Flatline"],
+                len=0.85,
+                outlinewidth=1,
+                outlinecolor="#d1d5db",
+            ),
+        )
+    )
+
+    fig.update_layout(
+        title=dict(text=f"<b>{title}</b>", x=0.5, font=dict(size=14)),
+        xaxis_title="IMU Axis Channels",
+        yaxis_title="Sensor Node",
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_PUB_FONT,
+        height=380,
+        margin=dict(l=70, r=40, t=55, b=95),
+    )
+    fig.update_xaxes(
+        tickangle=-90,
+        tickfont=dict(size=9),
+        showline=True,
+        linewidth=1.2,
+        linecolor="#1f2937",
+        mirror=True,
+    )
+    fig.update_yaxes(
+        autorange="reversed",
+        tickfont=dict(size=10),
+        showline=True,
+        linewidth=1.2,
+        linecolor="#1f2937",
+        mirror=True,
+    )
+    return fig
 
 
 def plot_quick_accel_check(df: pd.DataFrame, entry_id: str) -> go.Figure:

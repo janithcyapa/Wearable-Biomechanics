@@ -13,8 +13,6 @@ dependencies = [
     "pandas",
     "scipy",
     "plotly",
-    "matplotlib",
-    "seaborn",
     "ipywidgets",
     "opencv-python",
 ]
