@@ -425,22 +425,81 @@ def _write_checksums(output_dir: Path) -> None:
     (output_dir / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
-def inspect_h5(h5_path: str | Path) -> None:
-    """Print the full group, attribute, and dataset structure of an exported .h5 file."""
+def inspect_h5(h5_path: str | Path, show_rows: int = 10) -> dict[str, pd.DataFrame]:
+    """Inspect an exported .h5 file and display its metadata, IMU columns, phase markers, and fault log."""
+    from IPython.display import display
+
     h5_path = Path(h5_path)
-    print(f"\n📦 HDF5 Inspection: {h5_path} ({h5_path.stat().st_size / 1e6:.2f} MB)")
+    print(f"📦 HDF5 Inspection: {h5_path} ({h5_path.stat().st_size / 1e6:.2f} MB)")
+
+    def _decode_arr(arr):
+        return [x.decode("utf-8") if isinstance(x, (bytes, np.bytes_)) else str(x) for x in arr]
+
     with h5py.File(h5_path, "r") as f:
-        def _visitor(name, obj):
-            indent = "  " * (name.count("/") + 1)
-            if isinstance(obj, h5py.Group):
-                print(f"{indent}📁 /{name}/")
-                for k, v in obj.attrs.items():
-                    print(f"{indent}   @{k} = {v!r}")
-            else:
-                attrs = {k: v for k, v in obj.attrs.items()}
-                attr_str = f" | attrs={attrs}" if attrs else ""
-                print(f"{indent}📄 /{name}  shape={obj.shape}  dtype={obj.dtype}{attr_str}")
-        f.visititems(_visitor)
+        meta_df = pd.DataFrame([dict(f["metadata"].attrs)])
+        part_df = pd.DataFrame([dict(f["participant_metadata"].attrs)])
+
+        # Build readable IMU preview DataFrame with sensor_names + axis_names
+        sensors = _decode_arr(f["imu_data/sensor_names"][:])
+        axes = _decode_arr(f["imu_data/axis_names"][:])
+        n_preview = min(show_rows, f["imu_data/time_s"].shape[0])
+        imu_cols = {
+            "sample_idx": f["imu_data/sample_idx"][:n_preview],
+            "time_s": f["imu_data/time_s"][:n_preview],
+        }
+        acc = f["imu_data/accel"][:n_preview]
+        gyr = f["imu_data/gyro"][:n_preview]
+        for s_idx, code in enumerate(sensors):
+            for a_idx, ax in enumerate(axes):
+                imu_cols[f"{code}_A{ax}"] = acc[:, s_idx, a_idx]
+            for a_idx, ax in enumerate(axes):
+                imu_cols[f"{code}_G{ax}"] = gyr[:, s_idx, a_idx]
+        imu_preview_df = pd.DataFrame(imu_cols)
+        print(
+            f"  /imu_data: accel={f['imu_data/accel'].shape} ({f['imu_data/accel'].attrs.get('units','')}), "
+            f"gyro={f['imu_data/gyro'].shape} ({f['imu_data/gyro'].attrs.get('units','')})"
+        )
+
+        cons_df = pd.DataFrame(
+            {
+                k: (_decode_arr(v[:]) if v.dtype.kind in {"S", "O"} else v[:])
+                for k, v in f["phase_markers/consensus"].items()
+            }
+        )
+        ann_df = pd.DataFrame(
+            {
+                k: (_decode_arr(v[:]) if v.dtype.kind in {"S", "O"} else v[:])
+                for k, v in f["phase_markers/annotators"].items()
+            }
+        )
+        fault_df = pd.DataFrame(
+            {
+                k: (_decode_arr(v[:]) if v.dtype.kind in {"S", "O"} else v[:])
+                for k, v in f["fault_log"].items()
+            }
+        )
+
+    print("\n--- /metadata ---")
+    display(meta_df)
+    print("\n--- /participant_metadata ---")
+    display(part_df)
+    print(f"\n--- /imu_data (first {n_preview} rows × {len(imu_preview_df.columns)} cols) ---")
+    display(imu_preview_df)
+    print(f"\n--- /phase_markers/consensus ({len(cons_df)} rows) ---")
+    display(cons_df.head(show_rows))
+    print(f"\n--- /phase_markers/annotators ({len(ann_df)} rows) ---")
+    display(ann_df.head(show_rows))
+    print(f"\n--- /fault_log ({len(fault_df)} rows) ---")
+    display(fault_df)
+
+    return {
+        "metadata": meta_df,
+        "participant_metadata": part_df,
+        "imu_preview": imu_preview_df,
+        "phase_markers_consensus": cons_df,
+        "phase_markers_annotators": ann_df,
+        "fault_log": fault_df,
+    }
 
 
 def clean_export_dir(output_dir: str | Path) -> None:
@@ -642,7 +701,6 @@ def export_dataset(
                 cons_df=cons_df,
                 ann_df=ann_df,
             )
-            inspect_h5(sample_h5_path)
             sample_h5_written = True
 
         if not dry_run:
