@@ -73,45 +73,60 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `10_02` | `RAP` | `right_ankle_proximal` | Right | Ankle | Proximal |
 | `10_03` | `RKD` | `right_knee_distal` | Right | Knee | Distal |
 
-### 2.2 Symmetry & Hardware Abnormality Audit
-
-1. **Anatomical Completeness & Symmetry:** ✅ All 6 bilateral joints (`shoulder`, `elbow`, `wrist`, `hip`, `knee`, `ankle`) have complete Left/Right × Proximal/Distal coverage (24 IMUs) plus `upper_spine` and `lower_spine` (2 IMUs) = **26 IMUs**, with zero missing or duplicate anatomical slots.
-2. **Paired-Device Internal Order:** ✅ Every bilateral pair (`01↔03`, `02↔04`, `06↔07`, `08↔10`) uses identical `IMU1/IMU2/IMU3` slot ordering on Left and Right, and both midline nodes (`05/11` and `09`) use `_01 = Left`, `_02 = Right`, `_03 = Spine`.
-3. **Device ID Side-Numbering Flip (Quirk to Remember):** ⚠️ For `01/03`, `02/04`, and `06/07`, the **lower device ID is Right** (`01`, `02`, `06`) and the **higher device ID is Left** (`03`, `04`, `07`). For the lower leg (`08/10`), this flips: **`08` is Left** and **`10` is Right**.
-4. **Hardware Replacement (`05` vs `11`):** ⚠️ Device `05` was replaced by Device `11` in later sessions (`11_IMU1/2/3` = `05_IMU1/2/3`). The export pipeline must coalesce `05` and `11` into `LHP`, `RHP`, `LS` automatically.
 
 ---
 
-## 3. Export & Publication Pipeline Plan
 
-### Phase A — Pre-Export Metadata & Signal Cleanup
-1. **Participant Metadata Standardization:**
-   - Normalize `height` units (some entries are in meters e.g. `1.74`, others in cm e.g. `178.0` → standardize to **meters** or **cm** consistently).
-   - Audit missing `age`, `weight` (`body_mass`), `sex`, and `experience` fields.
-2. **IMU Column Standardization (`src/export/`):**
-   - Build a single canonical mapper in `src/` converting raw `{dev}_IMU{imu}_{axis}` (including `05`/`11` aliasing) to standardized anatomical names (`RKP_AX` or `right_knee_proximal_AX`).
-   - Run automated sensor-health & channel-completeness checks per Set.
-3. **Temporal Alignment & Lift Segmentation:**
-   - Apply `video_sync_front_delta_t_*` and `video_sync_side_lag_frames` so IMU timestamps, 2D/3D pose keypoints, and consensus Lift Phase Markers share a common time/frame reference.
+## 3. Published Dataset Folder Structure & File Formats
 
-### Phase B — Canonical Export Structure
+### 3.1 Top-Level Directory Layout
+
 ```text
-exported_dataset/
-├── README.md
-├── participants.csv              # Standardized Participant metadata
-├── sets.csv                      # Set-level manifest (participant_id, load_kg, fps, sync offsets, sensor completeness)
-├── lifts_phases.csv              # Consensus Lift Phase Markers (12 markers / 11 phases per Lift)
-└── sets/
-    └── set_XXXX/
-        ├── imu.parquet           # 100 Hz standardized 26-IMU telemetry
-        ├── pose_2d_front.parquet # 30 Hz front keypoints
-        ├── pose_2d_side.parquet  # 30 Hz side keypoints
-        └── pose_3d.parquet       # 30 Hz fused 3D skeleton
+/README.md                      ← How to start, licence, citation
+/data_dictionary.csv            ← Every field, unit, type, description
+/sets_summary.csv               ← One row per Set (set_id, participant_id, session_date, load_kg, lifts, usable_lifts, tier, view_mode, sync offsets)
+/participant_summary.csv        ← One row per Participant (de-identified: participant_id, age, sex, height_m, body_mass_kg, experience_years, achievement, best_weight_kg)
+/device_summary.csv             ← Sensor ID / short code → full anatomical name, segment, side, position, axes, units
+/fault_log.csv                  ← One row per sensor fault (set_id, sensor_code, fault_type, start_idx, end_idx, start_s, end_s)
+/phase_markers_summary.csv      ← Flat table: set_id, lift_id, phase_marker, annotator_id, frame, imu_idx, time_s
+/sets/
+    └── set_XXXX.h5             ← Per-Set HDF5 archive (gzip level 4)
+/videos/
+    ├── set_XXXX_front.mp4      ← 30 fps H.264 front camera
+    ├── set_XXXX_side.mp4       ← 30 fps H.264 side camera
+    └── set_XXXX_side_by_side.mp4 ← Temporally synced side-by-side H.264 video
+/checksums.sha256               ← SHA-256 verification manifest for all files
 ```
 
-### Phase C — Publication Reports Notebook (`05. Export & Reports.ipynb`)
-- Cohort & anthropometrics summary table (mean ± SD, min–max).
-- Sensor completeness matrix & signal quality summary across all Sets.
-- Inter-annotator agreement (SD in frames & ms) across all 12 Phase Markers and 11 Phases.
-- Exported publication-ready Plotly figures (3× high-DPI PNG/SVG) and LaTeX/Markdown tables.
+### 3.2 HDF5 Layout (`/sets/set_XXXX.h5`)
 
+```text
+/metadata                       attrs: set_id, participant_id, session_date, load_kg, lifts, usable_lifts, tier, view_mode, video_fps, imu_fs_hz, front_to_imu_lag_samples, side_to_front_lag_frames
+/participant_metadata           attrs: participant_id, age, sex, height_m, body_mass_kg, experience_years
+/imu/
+    ├── accel                   (N, 26, 3) float32   attrs: units="m/s^2", sample_rate_hz=100.0
+    ├── gyro                    (N, 26, 3) float32   attrs: units="deg/s", sample_rate_hz=100.0
+    ├── time_s                  (N,)       float64   attrs: units="s"
+    ├── sensor_names            (26,)      S4        ["RKP", "RHD", ..., "US"]
+    └── axis_names              (3,)       S2        ["X", "Y", "Z"]
+/pose/                          (optional, if available for the Set)
+    ├── pose_2d_front           (F_f, 17, 3) float32 attrs: coords=["x","y","conf"], fps=30.0
+    ├── pose_2d_side            (F_s, 17, 3) float32 attrs: coords=["x","y","conf"], fps=30.0
+    └── pose_3d                 (F_3, 17, 3) float32 attrs: units="m", fps=30.0
+/phase_markers/
+    ├── lift_id                 (M,)       int32
+    ├── marker_name             (M,)       S20       ["start", "setup", ..., "end"]
+    ├── annotator_id            (M,)       S16       e.g. "consensus" or "a2"
+    ├── frame                   (M,)       int32
+    ├── imu_idx                 (M,)       int32
+    └── time_s                  (M,)       float64
+```
+
+### 3.3 File Format Standards
+
+| Artifact | Format | Notes |
+| --- | --- | --- |
+| Summary & dictionary tables | **CSV (UTF-8, no index)** | Journal-standard, human-readable, compatible with Python/R/Excel. |
+| Per-Set multi-modal data | **HDF5 (`.h5`, `gzip` level 4)** | Separates `accel` (`m/s^2`) and `gyro` (`deg/s`), stores `pose` and `phase_markers` with pre-computed `imu_idx` and `time_s`. |
+| Video files | **MP4 (`libx264`, `yuv420p`)** | Universal playback and OpenCV/FFmpeg compatibility. |
+| Integrity manifest | **SHA-256 (`checksums.sha256`)** | Verifiable via `sha256sum -c checksums.sha256`. |
