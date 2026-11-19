@@ -556,6 +556,10 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
         raise ValueError(f"No annotator records in {set_id}")
 
     markers = [m for m in MARKER_ORDER if m in set(ann_df["marker_name"])]
+    mean_map = {
+        (int(r["lift_id"]), r["marker_name"]): float(r["mean_frame"])
+        for _, r in cons_df.iterrows()
+    }
     sd_ms_map = {
         (int(r["lift_id"]), r["marker_name"]): float(r["sd_ms"])
         for _, r in cons_df.iterrows()
@@ -573,9 +577,16 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
             sub_a = sub[sub["annotator_id"] == aid].set_index("marker_name")
             for m in markers:
                 row_txt.append(str(int(sub_a.loc[m, "frame"])) if m in sub_a.index else "NA")
-            # Keep annotator rows uncolored (NaN -> neutral background)
             z_vals.append([np.nan] * len(markers))
             text_vals.append(row_txt)
+
+        # Uncolored Mean row right before SD
+        y_labels.append(f"L{lid} · Mean")
+        z_vals.append([np.nan] * len(markers))
+        text_vals.append([
+            f"{mean_map[(lid, m)]:.1f}" if (lid, m) in mean_map else "NA"
+            for m in markers
+        ])
 
         # Only color the SD (ms) row
         y_labels.append(f"L{lid} · SD")
@@ -583,8 +594,7 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
         z_vals.append(row_sd)
         text_vals.append([f"{v:.0f}" if not np.isnan(v) else "NA" for v in row_sd])
 
-    flat_sd = [v for row in z_vals for v in row if not np.isnan(v)]
-    zmax = max(350.0, float(np.percentile(flat_sd, 99.5))) if flat_sd else 350.0
+    zmax = 300.0
 
     fig = go.Figure(
         data=go.Heatmap(
@@ -597,26 +607,26 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
             colorscale=_BLUE_TO_RED_SCALE,
             zmin=0.0,
             zmax=zmax,
-            xgap=1,
-            ygap=1,
+            xgap=2,
+            ygap=2,
             colorbar=dict(title="SD (ms)"),
             hovertemplate="<b>%{y} · %{x}</b><br>Value: %{text}<extra></extra>",
         )
     )
     fig.update_layout(
-        title=dict(text=f"<b>Annotator Frames & Inter-Annotator SD (ms) — {set_id}</b>", x=0.5, font=dict(size=14)),
+        title=dict(text=f"<b>Annotator Frames, Mean & Inter-Annotator SD (ms) — {set_id}</b>", x=0.5, font=dict(size=14)),
         xaxis_title="Phase Marker",
-        yaxis_title="Lift · Annotator / SD (ms)",
+        yaxis_title="Lift · Annotator / Mean / SD (ms)",
         template="plotly_white",
         paper_bgcolor="white",
-        plot_bgcolor="#f8fafc",
+        plot_bgcolor="#f1f5f9",
         font=_FONT,
-        height=max(440, 26 * len(y_labels) + 140),
+        height=max(460, 26 * len(y_labels) + 140),
         margin=dict(l=110, r=35, t=60, b=90),
     )
     _pub_axes(fig)
-    fig.update_xaxes(tickangle=-30)
-    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(tickangle=-30, showgrid=False)
+    fig.update_yaxes(autorange="reversed", showgrid=False)
     return fig
 
 
@@ -633,9 +643,7 @@ def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
     pivot = pivot.reindex(order_df["set_lift"].tolist())
 
     z_arr = pivot.to_numpy()
-    valid_z = z_arr[~np.isnan(z_arr)]
-    # Skew zmax near the top tail so only 1-2 extreme outliers turn red
-    zmax = max(400.0, float(np.percentile(valid_z, 99.5))) if len(valid_z) else 400.0
+    zmax = 300.0
 
     fig = go.Figure(
         data=go.Heatmap(
