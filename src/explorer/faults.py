@@ -200,13 +200,7 @@ def plot_joint_4panel(
         rows=4,
         cols=1,
         shared_xaxes=True,
-        vertical_spacing=0.045,
-        subplot_titles=(
-            f"<b>{s1_init} — Accelerometer (m/s²)</b>",
-            f"<b>{s1_init} — Gyroscope (deg/s)</b>",
-            f"<b>{s2_init} — Accelerometer (m/s²)</b>",
-            f"<b>{s2_init} — Gyroscope (deg/s)</b>",
-        ),
+        vertical_spacing=0.04,
     )
 
     # Pre-build traces for all 13 joints (12 traces per joint: 3 axes × 4 panels)
@@ -252,18 +246,19 @@ def plot_joint_4panel(
                 row=4, col=1,
             )
 
-    # Vertical dashed phase marker lines + vertical text labels along top
+    # Vertical dashed phase marker lines + staggered vertical text labels above Row 1
     if not cons_df.empty:
-        for _, row in cons_df.iterrows():
+        for idx, (_, row) in enumerate(cons_df.iterrows()):
             ts = float(row["time_s"])
             label = f"L{int(row['lift_id'])}:{row['marker_name']}"
             for r in (1, 2, 3, 4):
                 fig.add_vline(x=ts, line_width=1, line_dash="dot", line_color="#6b7280", row=r, col=1)
             fig.add_annotation(
                 x=ts, y=1.005, yref="paper", xref="x",
+                yshift=(idx % 2) * 28,
                 text=label, showarrow=False, textangle=-90,
                 xanchor="center", yanchor="bottom",
-                font=dict(size=9, color="#374151"),
+                font=dict(size=8, color="#374151"),
             )
 
     # Dropdown 1: Switch Joint (instant client-side HTML/JS)
@@ -282,10 +277,10 @@ def plot_joint_4panel(
                     {"visible": vis},
                     {
                         "title.text": f"<b>{set_data['set_id']} — {j_key.replace('_', ' ').title()} ({s1} & {s2})</b>",
-                        "annotations[0].text": f"<b>{s1} — Accelerometer (m/s²)</b>",
-                        "annotations[1].text": f"<b>{s1} — Gyroscope (deg/s)</b>",
-                        "annotations[2].text": f"<b>{s2} — Accelerometer (m/s²)</b>",
-                        "annotations[3].text": f"<b>{s2} — Gyroscope (deg/s)</b>",
+                        "yaxis.title.text": f"<b>{s1}</b> Accel (m/s²)",
+                        "yaxis2.title.text": f"<b>{s1}</b> Gyro (deg/s)",
+                        "yaxis3.title.text": f"<b>{s2}</b> Accel (m/s²)",
+                        "yaxis4.title.text": f"<b>{s2}</b> Gyro (deg/s)",
                     },
                 ],
             )
@@ -323,14 +318,14 @@ def plot_joint_4panel(
             dict(
                 active=default_joint_idx,
                 buttons=joint_buttons,
-                x=0.0, y=1.10, xanchor="left", yanchor="top",
+                x=0.0, y=1.22, xanchor="left", yanchor="top",
                 direction="down", showactive=True,
                 bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
             ),
             dict(
                 active=active_lift_idx,
                 buttons=lift_buttons,
-                x=0.38, y=1.10, xanchor="left", yanchor="top",
+                x=0.38, y=1.22, xanchor="left", yanchor="top",
                 direction="down", showactive=True,
                 bgcolor="#f9fafb", bordercolor="#d1d5db", borderwidth=1,
             ),
@@ -343,9 +338,9 @@ def plot_joint_4panel(
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_PUB_FONT,
-        height=940,
+        height=980,
         hovermode="x unified",
-        margin=dict(l=65, r=25, t=165, b=65),
+        margin=dict(l=75, r=25, t=220, b=65),
         legend=dict(orientation="h", y=-0.06, x=0.5, xanchor="center"),
     )
     for r in (1, 2, 3, 4):
@@ -360,10 +355,10 @@ def plot_joint_4panel(
             zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=0.8, row=r, col=1,
         )
     fig.update_xaxes(range=init_x_range, row=4, col=1)
-    fig.update_yaxes(title_text="Accel (m/s²)", row=1, col=1)
-    fig.update_yaxes(title_text="Gyro (deg/s)", row=2, col=1)
-    fig.update_yaxes(title_text="Accel (m/s²)", row=3, col=1)
-    fig.update_yaxes(title_text="Gyro (deg/s)", row=4, col=1)
+    fig.update_yaxes(title_text=f"<b>{s1_init}</b> Accel (m/s²)", row=1, col=1)
+    fig.update_yaxes(title_text=f"<b>{s1_init}</b> Gyro (deg/s)", row=2, col=1)
+    fig.update_yaxes(title_text=f"<b>{s2_init}</b> Accel (m/s²)", row=3, col=1)
+    fig.update_yaxes(title_text=f"<b>{s2_init}</b> Gyro (deg/s)", row=4, col=1)
     fig.update_xaxes(title_text="Time (s)", row=4, col=1)
     return fig
 
