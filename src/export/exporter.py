@@ -92,20 +92,13 @@ def load_and_deduplicate_entries(
 
     merged_records: list[dict] = []
     for _key, items in grouped.items():
-        # Prefer complete_trials over fault_tolerant_trials, then lowest entry_id
+        # Prefer complete_trials over fault_tolerant_trials, then lowest entry_id; drop duplicates
         items.sort(key=lambda x: (0 if x[0] == "complete_trials" else 1, x[1]))
         primary_tier, primary_id, primary_meta = items[0]
-        merged_proc = dict(primary_meta.get("processed_files", {}))
-        dup_ids: list[str] = []
-
-        for _t, dup_id, dup_meta in items[1:]:
-            dup_ids.append(dup_id)
-            for tag, rel_p in dup_meta.get("processed_files", {}).items():
-                if tag not in merged_proc:
-                    merged_proc[tag] = rel_p
+        dup_ids = [dup_id for _t, dup_id, _m in items[1:]]
 
         rec = dict(primary_meta)
-        rec["processed_files"] = merged_proc
+        rec["processed_files"] = dict(primary_meta.get("processed_files", {}))
         rec["_source_tier"] = primary_tier
         rec["_source_entry_id"] = primary_id
         rec["_has_faults"] = primary_tier == "fault_tolerant_trials"
