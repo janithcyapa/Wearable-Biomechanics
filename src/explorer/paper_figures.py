@@ -438,3 +438,4 @@ def plot_fig10_annotation_agreement(dataset_dir: str | Path) -> go.Figure:
     _pub_axes(fig)
     fig.update_xaxes(tickangle=-30)
     return fig
+
