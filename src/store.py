@@ -25,7 +25,7 @@ def display_table(
     df: pd.DataFrame,
     page_length: int = 15,
     clean_columns: bool = True,
-    theme: str = "ag-theme-alpine-dark",
+    theme: str = "ag-theme-balham-dark",
     height: int = 420,
 ) -> None:
     """Render an interactive AG Grid table (`ipyaggrid`) in dark theme.
