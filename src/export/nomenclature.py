@@ -206,6 +206,7 @@ def build_data_dictionary_df() -> pd.DataFrame:
         ("participant_summary.csv", "experience_years", "float", "years", "Weightlifting training experience"),
         ("participant_summary.csv", "achievement", "str", "—", "Highest competition / training achievement"),
         ("participant_summary.csv", "best_weight_kg", "float", "kg", "Personal best Clean & Jerk load"),
+        ("participant_summary.csv", "notes", "str", "—", "Additional background notes (e.g. participation in other sports)"),
         # sets_summary.csv
         ("sets_summary.csv", "set_id", "str", "—", "Chronological Set ID (set_0001, ...)"),
         ("sets_summary.csv", "participant_id", "str", "—", "Foreign key to participant_summary.csv"),

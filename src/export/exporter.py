@@ -206,6 +206,9 @@ def _build_participant_summary(
             raw_sex, raw_sex.upper() if raw_sex and raw_sex not in {"-", "na", "n/a", "n\\a"} else "NA"
         )
 
+        raw_notes = str(meta.get("notes", "")).strip()
+        notes = "NA" if raw_notes in {"", "-", "NA", "N/A", "N\\A"} else raw_notes
+
         rows.append(
             {
                 "participant_id": pid,
@@ -218,6 +221,7 @@ def _build_participant_summary(
                 "experience_years": exp if not np.isnan(exp) else pd.NA,
                 "achievement": ach,
                 "best_weight_kg": best_w if not np.isnan(best_w) else pd.NA,
+                "notes": notes,
             }
         )
     return pd.DataFrame(rows)

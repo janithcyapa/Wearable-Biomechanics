@@ -142,6 +142,7 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `experience_years` | `float` | `years` | Weightlifting training experience |
 | `achievement` | `str` | — | Best competition / training level |
 | `best_weight_kg` | `float` | `kg` | Personal best Clean & Jerk load |
+| `notes` | `str` | — | Additional background notes (e.g. other sports) |
 
 ### 4.3 `/sets_summary.csv`
 | Column | Type | Unit | Description |
@@ -202,7 +203,7 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 
 ### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema — Exact 1:1 Match with Summary CSVs)
 - **`/metadata` (Group Attributes — exact match with `sets_summary.csv`):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `imu_samples`, `duration_s`, `sensors_ok`, `sensors_total`, `has_faults`
-- **`/participant_metadata` (Group Attributes — exact match with `participant_summary.csv`):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `bmi_kg_m2`, `experience_years`, `achievement`, `best_weight_kg`
+- **`/participant_metadata` (Group Attributes — exact match with `participant_summary.csv`):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `bmi_kg_m2`, `experience_years`, `achievement`, `best_weight_kg`, `notes`
 - **`/fault_log/` (Group — exact match with `fault_log.csv` filtered to this `set_id`, empty arrays if `has_faults=False`):**
   - `fault_id`: `(K,)` `S16`
   - `set_id`: `(K,)` `S16`
