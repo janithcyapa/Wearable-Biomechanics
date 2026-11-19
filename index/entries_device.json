@@ -1,0 +1,10 @@
+{
+  "__auto_counter__": 1,
+  "entry_0001": {
+    "entity_id": null,
+    "description": "Datasets taken to check device resolution, sensitivity and consistency compared to Qarm with 10,5,3,2,1,0.5,0.25 angle changes",
+    "timestamp": "1781954406",
+    "raw_csv_path": "raw_data/device/entry_0001_none_1781856275.csv",
+    "processed_files": {}
+  }
+}
