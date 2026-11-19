@@ -2,6 +2,7 @@
 
 from .exporter import (
     build_id_mapping_df,
+    clean_export_dir,
     export_dataset,
     load_and_deduplicate_entries,
 )
@@ -23,7 +24,9 @@ __all__ = [
     "build_data_dictionary_df",
     "build_device_summary_df",
     "build_id_mapping_df",
+    "clean_export_dir",
     "export_dataset",
     "load_and_deduplicate_entries",
     "standardize_imu_arrays",
 ]
+

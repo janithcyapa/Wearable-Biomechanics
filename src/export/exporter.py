@@ -421,6 +421,38 @@ def _write_checksums(output_dir: Path) -> None:
     (output_dir / "checksums.sha256").write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
+def clean_export_dir(output_dir: str | Path) -> None:
+    """Remove all previously exported dataset files inside `output_dir` for a clean rebuild."""
+    out_dir = Path(output_dir)
+    if not out_dir.exists():
+        print(f"ℹ️ Export folder does not exist yet: {out_dir}")
+        return
+
+    removed = 0
+    for sub in ("sets", "videos"):
+        sub_path = out_dir / sub
+        if sub_path.exists():
+            shutil.rmtree(sub_path)
+            removed += 1
+
+    for fname in (
+        "README.md",
+        "data_dictionary.csv",
+        "sets_summary.csv",
+        "participant_summary.csv",
+        "device_summary.csv",
+        "fault_log.csv",
+        "phase_markers_summary.csv",
+        "checksums.sha256",
+    ):
+        fpath = out_dir / fname
+        if fpath.exists():
+            fpath.unlink()
+            removed += 1
+
+    print(f"🧹 Cleaned {removed} artifact(s) from {out_dir}")
+
+
 def export_dataset(
     source_base_dir: str | Path,
     output_dir: str | Path,
@@ -428,17 +460,20 @@ def export_dataset(
     index_dir: str | Path | None = None,
     copy_videos: bool = True,
     only_new: bool = False,
+    dry_run: bool = False,
 ) -> dict[str, pd.DataFrame]:
     """Export all (or newly added) Sets from `source_base_dir` to `output_dir`.
 
-    When `only_new=True` and `mapping_csv_path` exists, skips already-exported Sets
-    and appends new Sets while preserving existing `participant_summary.csv` edits.
+    When `dry_run=True`, performs full validation and logs per-Set diagnostics
+    (sensor counts, missing sensors, column samples, video & annotation checks)
+    without writing any files.
     """
     source_base = Path(source_base_dir)
     out_dir = Path(output_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
-    (out_dir / "sets").mkdir(exist_ok=True)
-    (out_dir / "videos").mkdir(exist_ok=True)
+    if not dry_run:
+        out_dir.mkdir(parents=True, exist_ok=True)
+        (out_dir / "sets").mkdir(exist_ok=True)
+        (out_dir / "videos").mkdir(exist_ok=True)
 
     idx_path = Path(index_dir) if index_dir else source_base / "index"
     already_exported: set[str] = set()
@@ -450,7 +485,6 @@ def export_dataset(
         existing_mapping_csv=mapping_csv_path if only_new else None,
     )
 
-    # Build/preserve participant summary
     part_csv = out_dir / "participant_summary.csv"
     part_df = _build_participant_summary(
         subject_id_map,
@@ -461,6 +495,7 @@ def export_dataset(
 
     sets_rows: list[dict] = []
     all_cons_dfs: list[pd.DataFrame] = []
+    diag_rows: list[dict] = []
 
     if only_new and (out_dir / "sets_summary.csv").exists():
         sets_rows = pd.read_csv(out_dir / "sets_summary.csv").to_dict(orient="records")
@@ -473,8 +508,31 @@ def export_dataset(
             continue
 
         raw_csv = source_base / rec["raw_csv_path"]
-        if not raw_csv.exists():
+        raw_exists = raw_csv.exists()
+        related = rec.get("related_files", {})
+        front_ok = bool(related.get("front_video") and (source_base / related["front_video"]).exists())
+        side_ok = bool(related.get("side_video") and (source_base / related["side_video"]).exists())
+
+        if not raw_exists:
             print(f"⚠️ Skipping {set_id} ({rec['_source_entry_id']}): missing {raw_csv}")
+            diag_rows.append(
+                {
+                    "set_id": set_id,
+                    "participant_id": rec["_participant_id"],
+                    "source_entry_id": rec["_source_entry_id"],
+                    "has_faults": bool(rec["_has_faults"]),
+                    "raw_csv_exists": False,
+                    "imu_samples": 0,
+                    "sensors_ok": 0,
+                    "sensors_total": len(SENSOR_ORDER),
+                    "bad_or_missing_sensors": "ALL (missing CSV)",
+                    "sample_raw_cols": "",
+                    "n_annotators": 0,
+                    "n_markers": 0,
+                    "front_video": front_ok,
+                    "side_video": side_ok,
+                }
+            )
             continue
 
         imu_fs = float(rec.get("imu_fs_hz") or 100.0)
@@ -483,6 +541,17 @@ def export_dataset(
         imu_arrays = standardize_imu_arrays(raw_df, imu_fs_hz=imu_fs)
         n_samples = len(raw_df)
         duration_s = round(n_samples / imu_fs, 4)
+
+        # Identify which sensors are missing or flatlined/all-NaN
+        bad_sensors = []
+        acc_arr, gyr_arr = imu_arrays["accel"], imu_arrays["gyro"]
+        for s_idx, code in enumerate(SENSOR_ORDER):
+            a_slice = acc_arr[:, s_idx, :]
+            g_slice = gyr_arr[:, s_idx, :]
+            a_bad = np.all(np.isnan(a_slice)) or any(np.nanstd(a_slice[:, j]) == 0 for j in range(3))
+            g_bad = np.all(np.isnan(g_slice)) or any(np.nanstd(g_slice[:, j]) == 0 for j in range(3))
+            if a_bad or g_bad:
+                bad_sensors.append(code)
 
         set_row = {
             "set_id": set_id,
@@ -503,29 +572,58 @@ def export_dataset(
         if not cons_df.empty:
             all_cons_dfs.append(cons_df)
 
-        h5_meta = dict(set_row)
-        h5_meta["imu_fs_hz"] = imu_fs
-        _write_set_h5(
-            out_dir / "sets" / f"{set_id}.h5",
-            set_meta=h5_meta,
-            part_meta=part_lookup[rec["_participant_id"]],
-            imu_arrays=imu_arrays,
-            cons_df=cons_df,
-            ann_df=ann_df,
+        n_ann = int(ann_df["annotator_id"].nunique()) if not ann_df.empty else 0
+        raw_imu_cols = [c for c in raw_df.columns if c != "Timestamp"][:3]
+        diag_rows.append(
+            {
+                "set_id": set_id,
+                "participant_id": rec["_participant_id"],
+                "source_entry_id": rec["_source_entry_id"],
+                "has_faults": bool(rec["_has_faults"]),
+                "raw_csv_exists": True,
+                "imu_samples": n_samples,
+                "sensors_ok": set_row["sensors_ok"],
+                "sensors_total": set_row["sensors_total"],
+                "bad_or_missing_sensors": ", ".join(bad_sensors) if bad_sensors else "NONE",
+                "sample_raw_cols": ", ".join(raw_imu_cols),
+                "n_annotators": n_ann,
+                "n_markers": len(cons_df),
+                "front_video": front_ok,
+                "side_video": side_ok,
+            }
         )
 
-        if copy_videos:
-            related = rec.get("related_files", {})
-            for cam_key, suffix in [("front_video", "front.mp4"), ("side_video", "side.mp4")]:
-                rel_vid = related.get(cam_key)
-                if rel_vid:
-                    src_vid = source_base / rel_vid
-                    if src_vid.exists():
-                        shutil.copy2(src_vid, out_dir / "videos" / f"{set_id}_{suffix}")
+        prefix = "[DRY RUN]" if dry_run else "✓ Exported"
+        print(
+            f"{prefix} {set_id} ({rec['_source_entry_id']}): "
+            f"sensors_ok={set_row['sensors_ok']}/26, "
+            f"markers={len(cons_df)} (ann={n_ann}), "
+            f"videos=(F:{front_ok}, S:{side_ok}), "
+            f"has_faults={set_row['has_faults']}"
+            + (f" | bad={bad_sensors}" if bad_sensors else "")
+        )
 
-        print(f"✓ Exported {set_id} (sensors_ok={set_row['sensors_ok']}/26, has_faults={set_row['has_faults']})")
+        if not dry_run:
+            h5_meta = dict(set_row)
+            h5_meta["imu_fs_hz"] = imu_fs
+            _write_set_h5(
+                out_dir / "sets" / f"{set_id}.h5",
+                set_meta=h5_meta,
+                part_meta=part_lookup[rec["_participant_id"]],
+                imu_arrays=imu_arrays,
+                cons_df=cons_df,
+                ann_df=ann_df,
+            )
 
-    sets_df = pd.DataFrame(sets_rows).sort_values("set_id").reset_index(drop=True)
+            if copy_videos:
+                for cam_key, suffix in [("front_video", "front.mp4"), ("side_video", "side.mp4")]:
+                    rel_vid = related.get(cam_key)
+                    if rel_vid:
+                        src_vid = source_base / rel_vid
+                        if src_vid.exists():
+                            shutil.copy2(src_vid, out_dir / "videos" / f"{set_id}_{suffix}")
+
+    sets_df = pd.DataFrame(sets_rows).sort_values("set_id").reset_index(drop=True) if sets_rows else pd.DataFrame()
     cons_all_df = (
         pd.concat(all_cons_dfs, ignore_index=True)
         if all_cons_dfs
@@ -534,22 +632,31 @@ def export_dataset(
     device_df = build_device_summary_df()
     dict_df = build_data_dictionary_df()
     fault_df = pd.DataFrame(columns=FAULT_LOG_COLUMNS)
-
-    part_df.to_csv(part_csv, index=False)
-    sets_df.to_csv(out_dir / "sets_summary.csv", index=False)
-    device_df.to_csv(out_dir / "device_summary.csv", index=False)
-    dict_df.to_csv(out_dir / "data_dictionary.csv", index=False)
-    cons_all_df.to_csv(out_dir / "phase_markers_summary.csv", index=False)
-    if not (only_new and (out_dir / "fault_log.csv").exists()):
-        fault_df.to_csv(out_dir / "fault_log.csv", index=False)
-
-    _write_readme(out_dir)
-    _write_checksums(out_dir)
-
+    diag_df = pd.DataFrame(diag_rows)
     mapping_df = build_id_mapping_df(records)
-    if mapping_csv_path:
-        Path(mapping_csv_path).parent.mkdir(parents=True, exist_ok=True)
-        mapping_df.to_csv(mapping_csv_path, index=False)
+
+    if dry_run:
+        full_26 = int((diag_df["sensors_ok"] == 26).sum()) if not diag_df.empty else 0
+        print(
+            f"\n🔎 DRY RUN SUMMARY: {len(diag_df)} Sets checked | "
+            f"{full_26}/{len(diag_df)} have 26/26 healthy sensors | "
+            f"Participants: {len(part_df)} | Consensus markers: {len(cons_all_df)}"
+        )
+    else:
+        part_df.to_csv(part_csv, index=False)
+        sets_df.to_csv(out_dir / "sets_summary.csv", index=False)
+        device_df.to_csv(out_dir / "device_summary.csv", index=False)
+        dict_df.to_csv(out_dir / "data_dictionary.csv", index=False)
+        cons_all_df.to_csv(out_dir / "phase_markers_summary.csv", index=False)
+        if not (only_new and (out_dir / "fault_log.csv").exists()):
+            fault_df.to_csv(out_dir / "fault_log.csv", index=False)
+
+        _write_readme(out_dir)
+        _write_checksums(out_dir)
+
+        if mapping_csv_path:
+            Path(mapping_csv_path).parent.mkdir(parents=True, exist_ok=True)
+            mapping_df.to_csv(mapping_csv_path, index=False)
 
     return {
         "participants": part_df,
@@ -557,4 +664,6 @@ def export_dataset(
         "devices": device_df,
         "phase_markers": cons_all_df,
         "id_mapping": mapping_df,
+        "diagnostics": diag_df,
     }
+
