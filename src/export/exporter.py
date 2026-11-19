@@ -630,10 +630,14 @@ def export_dataset(
         unique_fault_types = sorted({flt for flts in sensor_faults.values() for flt in flts})
         fault_types_str = ", ".join(unique_fault_types) if unique_fault_types else "NONE"
 
+        raw_time = str(rec.get("time", "")).strip()
+        session_time = f"{raw_time}+05:30" if raw_time and "+05:30" not in raw_time else raw_time
+
         h5_set_row = {
             "set_id": set_id,
             "participant_id": rec["_participant_id"],
             "session_date": str(rec.get("date", "")),
+            "session_time": session_time,
             "load_kg": float(rec.get("weight_kg") or 0.0),
             "lifts_total": int(rec.get("reps") or 0),
             "lifts_usable": int(rec.get("usable_reps") or 0),

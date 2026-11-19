@@ -150,6 +150,7 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `set_id` | `str` | — | Unique Set ID (`set_0001`, …) |
 | `participant_id` | `str` | — | Foreign key to `participant_summary.csv` |
 | `session_date` | `str` | `YYYY-MM-DD` | Date of data collection |
+| `session_time` | `str` | `HH:MM+05:30` | Local recording time (UTC+05:30) |
 | `load_kg` | `float` | `kg` | Barbell load for the Set |
 | `lifts_total` | `int` | `count` | Total Clean & Jerk lifts performed in the Set |
 | `lifts_usable` | `int` | `count` | Number of usable/annotated lifts |
@@ -202,7 +203,7 @@ All **26 IMUs** (mounted across **10 multi-IMU sensor nodes**) follow a unified 
 | `time_s` | `float` | `s` | Final synchronized timestamp (`imu_idx / imu_fs_hz`) |
 
 ### 4.7 `/sets/set_XXXX.h5` (Per-Set HDF5 Schema — Exact 1:1 Match with Summary CSVs)
-- **`/metadata` (Group Attributes — exact match with `sets_summary.csv`):** `set_id`, `participant_id`, `session_date`, `load_kg`, `lifts_total`, `lifts_usable`, `imu_samples`, `duration_s`, `sensors_ok`, `sensors_total`, `has_faults`
+- **`/metadata` (Group Attributes — exact match with `sets_summary.csv`):** `set_id`, `participant_id`, `session_date`, `session_time`, `load_kg`, `lifts_total`, `lifts_usable`, `imu_samples`, `duration_s`, `sensors_ok`, `sensors_total`, `has_faults`
 - **`/participant_metadata` (Group Attributes — exact match with `participant_summary.csv`):** `participant_id`, `age_years`, `sex`, `height_m`, `body_mass_kg`, `bmi_kg_m2`, `experience_years`, `achievement`, `best_weight_kg`, `notes`
 - **`/fault_log/` (Group — exact match with `fault_log.csv` filtered to this `set_id`, empty arrays if `has_faults=False`):**
   - `fault_id`: `(K,)` `S16`

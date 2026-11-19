@@ -211,6 +211,7 @@ def build_data_dictionary_df() -> pd.DataFrame:
         ("sets_summary.csv", "set_id", "str", "—", "Chronological Set ID (set_0001, ...)"),
         ("sets_summary.csv", "participant_id", "str", "—", "Foreign key to participant_summary.csv"),
         ("sets_summary.csv", "session_date", "str", "YYYY-MM-DD", "Date of data collection"),
+        ("sets_summary.csv", "session_time", "str", "HH:MM+05:30", "Local recording time (UTC+05:30)"),
         ("sets_summary.csv", "load_kg", "float", "kg", "Barbell load for the Set"),
         ("sets_summary.csv", "lifts_total", "int", "count", "Total Clean & Jerk lifts performed in the Set"),
         ("sets_summary.csv", "lifts_usable", "int", "count", "Usable/annotated Clean & Jerk lifts in the Set"),
