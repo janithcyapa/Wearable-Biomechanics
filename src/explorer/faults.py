@@ -10,7 +10,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 _PUB_FONT = dict(family="Arial, Helvetica, sans-serif", size=11, color="#111827")
-_PUB_PALETTE = ["#0072B2", "#D55E00", "#009E73", "#CC79A7", "#E69F00", "#56B4E9"]
+_PUB_PALETTE = ["#4E8EC2", "#E08B63", "#52B79A", "#C78EB0", "#E8B866", "#7EC2E6"]
 
 JOINT_SENSOR_PAIRS: dict[str, tuple[str, str]] = {
     "right_knee": ("RKP", "RKD"),

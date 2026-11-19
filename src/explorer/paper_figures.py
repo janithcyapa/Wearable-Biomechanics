@@ -14,13 +14,15 @@ from .nomenclature_helpers import MARKER_ORDER
 
 _FONT = dict(family="Arial, Helvetica, sans-serif", size=11, color="#111827")
 _PALETTE = [
-    "#0072B2",  # Blue
-    "#D55E00",  # Vermilion
-    "#009E73",  # Bluish green
-    "#CC79A7",  # Reddish purple
-    "#E69F00",  # Orange
-    "#56B4E9",  # Sky blue
+    "#4E8EC2",  # Pastel Blue
+    "#E08B63",  # Pastel Coral
+    "#52B79A",  # Pastel Mint
+    "#C78EB0",  # Pastel Mauve
+    "#E8B866",  # Pastel Amber
+    "#7EC2E6",  # Pastel Sky
 ]
+_HEATMAP_SCALE = [[0.0, "#F4A582"], [0.5, "#FAD9A1"], [1.0, "#9AE0C8"]]
+_HEATMAP_SCALE_INV = [[0.0, "#9AE0C8"], [0.4, "#FAD9A1"], [1.0, "#F4A582"]]
 _PHASE_BAND_COLORS = [
     "rgba(0,114,178,0.08)", "rgba(230,159,0,0.08)", "rgba(0,158,115,0.08)",
     "rgba(213,94,0,0.08)", "rgba(204,121,167,0.08)", "rgba(86,180,233,0.08)",
@@ -470,7 +472,7 @@ def plot_imu_validation_figure(dataset_dir: str | Path) -> go.Figure:
             z=data["completeness_matrix"],
             x=sensors,
             y=data["set_ids"],
-            colorscale=[[0.0, "#D55E00"], [0.5, "#E69F00"], [1.0, "#009E73"]],
+            colorscale=_HEATMAP_SCALE,
             zmin=0.0,
             zmax=100.0,
             colorbar=dict(title="% Valid", len=0.40, y=0.80, x=0.45),
@@ -593,7 +595,7 @@ def plot_set_annotator_grid(dataset_dir: str | Path, set_id: str = "set_0001") -
             text=text_vals,
             texttemplate="%{text}",
             textfont=dict(size=9),
-            colorscale=[[0.0, "#009E73"], [0.35, "#E69F00"], [1.0, "#D55E00"]],
+            colorscale=_HEATMAP_SCALE_INV,
             zmin=0.0,
             zmax=300.0,
             xgap=1,
@@ -637,7 +639,7 @@ def plot_all_sets_annotation_sd_heatmap(dataset_dir: str | Path) -> go.Figure:
             z=pivot.to_numpy(),
             x=list(pivot.columns),
             y=list(pivot.index),
-            colorscale=[[0.0, "#009E73"], [0.4, "#E69F00"], [1.0, "#D55E00"]],
+            colorscale=_HEATMAP_SCALE_INV,
             zmin=0.0,
             zmax=300.0,
             colorbar=dict(title="SD (ms)"),

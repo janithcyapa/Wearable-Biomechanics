@@ -9,12 +9,12 @@ from plotly.subplots import make_subplots
 
 _PUB_FONT = dict(family="Arial, Helvetica, sans-serif", size=12, color="#111827")
 _PUB_PALETTE = [
-    "#0072B2",  # Blue
-    "#D55E00",  # Vermilion
-    "#009E73",  # Bluish green
-    "#CC79A7",  # Reddish purple
-    "#E69F00",  # Orange
-    "#56B4E9",  # Sky blue
+    "#4E8EC2",  # Pastel Blue
+    "#E08B63",  # Pastel Coral
+    "#52B79A",  # Pastel Mint
+    "#C78EB0",  # Pastel Mauve
+    "#E8B866",  # Pastel Amber
+    "#7EC2E6",  # Pastel Sky
 ]
 
 
@@ -266,9 +266,9 @@ def plot_set_sensor_status(set_data: dict) -> go.Figure:
             scores.append(0)
 
     colorscale = [
-        [0.0, "#009E73"], [0.33, "#009E73"],
-        [0.33, "#E69F00"], [0.66, "#E69F00"],
-        [0.66, "#D55E00"], [1.0, "#D55E00"],
+        [0.0, "#9AE0C8"], [0.33, "#9AE0C8"],
+        [0.33, "#FAD9A1"], [0.66, "#FAD9A1"],
+        [0.66, "#F4A582"], [1.0, "#F4A582"],
     ]
     fig = go.Figure(
         data=go.Heatmap(
