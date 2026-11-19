@@ -104,32 +104,72 @@ def build_paper_tables(dataset_dir: str | Path) -> dict[str, pd.DataFrame]:
     return {"table5_demographics": tab5, "table7_coverage": tab7, "table8_agreement": tab8}
 
 
+def _parse_lift_ids(lift_spec: int | str | list[int] | tuple[int, ...], available_lifts: list[int]) -> list[int]:
+    """Parse lift specification like 1, '1,2', '1-5', or 'all' into sorted lift IDs."""
+    if isinstance(lift_spec, int):
+        return [lift_spec]
+    if isinstance(lift_spec, (list, tuple)):
+        return sorted({int(x) for x in lift_spec})
+    s = str(lift_spec).strip().lower()
+    if s in {"", "all", "0"}:
+        return sorted(available_lifts)
+    out: set[int] = set()
+    for part in s.split(","):
+        part = part.strip()
+        if not part:
+            continue
+        if "-" in part:
+            a, b = part.split("-", 1)
+            out.update(range(int(a.strip()), int(b.strip()) + 1))
+        else:
+            out.add(int(part))
+    return sorted(out)
+
+
 def plot_fig4_annotation_scheme(
     dataset_dir: str | Path,
     set_id: str = "set_0003",
-    lift_id: int = 1,
-    sensor_code: str = "US",
+    lift_ids: int | str | list[int] | tuple[int, ...] = "1",
+    sensor_codes: str | list[str] | tuple[str, ...] = "US",
     modality: str = "gyro",
     signal_mode: str = "axes",
-    axes: tuple[str, ...] | list[str] = ("X", "Y", "Z"),
+    axes: tuple[str, ...] | list[str] | str = ("X", "Y", "Z"),
 ) -> go.Figure:
-    """Plan.md Fig 4: 11 shaded phases & 12 markers over Accel, Gyro, or Both (magnitude or selected axes)."""
+    """Plan.md Fig 4: 11 shaded phases & 12 markers over 1+ sensors, 1+ lifts, Accel/Gyro/Both."""
     if modality not in {"accel", "gyro", "both"}:
         raise ValueError("modality must be 'accel', 'gyro', or 'both'")
-    if signal_mode not in {"magnitude", "axes"}:
-        raise ValueError("signal_mode must be 'magnitude' or 'axes'")
+    if signal_mode not in {"magnitude", "axes", "both"}:
+        raise ValueError("signal_mode must be 'magnitude', 'axes', or 'both'")
 
     sd = load_set_h5(dataset_dir, set_id)
-    s_idx = sd["sensors"].index(sensor_code)
     t = sd["time_s"]
-    acc = sd["accel"][:, s_idx, :]
-    gyr = sd["gyro"][:, s_idx, :]
-
     cons = sd["consensus_df"]
-    lift_m = cons[cons["lift_id"] == lift_id].copy()
+    available_lifts = sorted(int(x) for x in cons["lift_id"].unique())
+    chosen_lifts = [lid for lid in _parse_lift_ids(lift_ids, available_lifts) if lid in available_lifts]
+    if not chosen_lifts:
+        raise ValueError(f"No matching lifts found in {available_lifts} for '{lift_ids}'")
+
+    if isinstance(sensor_codes, str):
+        chosen_sensors = [s.strip() for s in sensor_codes.split(",") if s.strip()]
+    else:
+        chosen_sensors = [str(s).strip() for s in sensor_codes if str(s).strip()]
+    for sc in chosen_sensors:
+        if sc not in sd["sensors"]:
+            raise ValueError(f"Sensor '{sc}' not found in {sd['sensors']}")
+
+    if isinstance(axes, str):
+        axes_list = [a.strip() for a in axes.split(",") if a.strip()]
+    else:
+        axes_list = list(axes)
+    axis_idx_map = {"X": 0, "Y": 1, "Z": 2}
+    selected_axes = [ax.upper() for ax in axes_list if ax.upper() in axis_idx_map]
+    if signal_mode in {"axes", "both"} and not selected_axes:
+        selected_axes = ["X", "Y", "Z"]
+
     order_map = {m: i for i, m in enumerate(MARKER_ORDER)}
+    lift_m = cons[cons["lift_id"].isin(chosen_lifts)].copy()
     lift_m["_ord"] = lift_m["marker_name"].map(order_map)
-    lift_m = lift_m.sort_values("_ord").reset_index(drop=True)
+    lift_m = lift_m.sort_values(["lift_id", "_ord"]).reset_index(drop=True)
 
     t0 = float(lift_m["time_s"].min()) - 0.2
     t1 = float(lift_m["time_s"].max()) + 0.2
@@ -140,91 +180,101 @@ def plot_fig4_annotation_scheme(
     n_rows = len(mods)
     fig = make_subplots(rows=n_rows, cols=1, shared_xaxes=True, vertical_spacing=0.08)
 
-    axis_idx_map = {"X": 0, "Y": 1, "Z": 2}
-    selected_axes = [ax.upper() for ax in axes if ax.upper() in axis_idx_map]
-    if signal_mode == "axes" and not selected_axes:
-        selected_axes = ["X", "Y", "Z"]
-
+    color_i = 0
     for row_i, mod in enumerate(mods, start=1):
-        arr = acc[mask] if mod == "accel" else gyr[mask]
         prefix = "A" if mod == "accel" else "G"
         unit = "m/s²" if mod == "accel" else "deg/s"
         mod_label = "Acceleration" if mod == "accel" else "Angular Velocity"
 
-        if signal_mode == "magnitude":
-            mag = np.linalg.norm(arr, axis=1)
-            fig.add_trace(
-                go.Scatter(
-                    x=t_win,
-                    y=mag,
-                    mode="lines",
-                    name=f"{sensor_code} |{prefix}| ({unit})",
-                    line=dict(width=1.6, color=_PALETTE[0 if mod == "accel" else 1]),
-                ),
-                row=row_i,
-                col=1,
-            )
-            fig.update_yaxes(title_text=f"{sensor_code} |{prefix}| ({unit})", row=row_i, col=1)
-        else:
-            for ax in selected_axes:
-                ax_i = axis_idx_map[ax]
-                color = _PALETTE[ax_i + (0 if mod == "accel" else 3)]
+        for sc in chosen_sensors:
+            s_idx = sd["sensors"].index(sc)
+            arr = (sd["accel"] if mod == "accel" else sd["gyro"])[mask, s_idx, :]
+
+            if signal_mode in {"axes", "both"}:
+                for ax in selected_axes:
+                    ax_i = axis_idx_map[ax]
+                    color = _PALETTE[color_i % len(_PALETTE)]
+                    color_i += 1
+                    fig.add_trace(
+                        go.Scatter(
+                            x=t_win,
+                            y=arr[:, ax_i],
+                            mode="lines",
+                            name=f"{sc} {prefix}{ax}",
+                            line=dict(width=1.4, color=color),
+                        ),
+                        row=row_i,
+                        col=1,
+                    )
+
+            if signal_mode in {"magnitude", "both"}:
+                mag = np.linalg.norm(arr, axis=1)
+                color = _PALETTE[color_i % len(_PALETTE)]
+                color_i += 1
                 fig.add_trace(
                     go.Scatter(
                         x=t_win,
-                        y=arr[:, ax_i],
+                        y=mag,
                         mode="lines",
-                        name=f"{prefix}{ax} ({unit})",
-                        line=dict(width=1.4, color=color),
+                        name=f"{sc} |{prefix}|",
+                        line=dict(width=1.6, color=color, dash="solid" if signal_mode == "magnitude" else "dash"),
                     ),
                     row=row_i,
                     col=1,
                 )
-            fig.update_yaxes(title_text=f"{sensor_code} {mod_label} ({unit})", row=row_i, col=1)
 
-    # Shaded phase bands + boundary lines across all rows
-    for i in range(len(lift_m) - 1):
-        x_start = float(lift_m.loc[i, "time_s"])
-        x_end = float(lift_m.loc[i + 1, "time_s"])
-        p_name = str(lift_m.loc[i, "marker_name"])
+        fig.update_yaxes(title_text=f"{mod_label} ({unit})", row=row_i, col=1)
+
+    # Shaded phase bands & markers per selected lift
+    show_ann_text = len(chosen_lifts) <= 2
+    for lid in chosen_lifts:
+        sub_m = lift_m[lift_m["lift_id"] == lid].reset_index(drop=True)
+        for i in range(len(sub_m) - 1):
+            x_start = float(sub_m.loc[i, "time_s"])
+            x_end = float(sub_m.loc[i + 1, "time_s"])
+            p_name = str(sub_m.loc[i, "marker_name"])
+            for row_i in range(1, n_rows + 1):
+                fig.add_vrect(
+                    x0=x_start,
+                    x1=x_end,
+                    fillcolor=_PHASE_BAND_COLORS[i % len(_PHASE_BAND_COLORS)],
+                    layer="below",
+                    line_width=0,
+                    row=row_i,
+                    col=1,
+                )
+                fig.add_vline(x=x_start, line_width=1, line_dash="dot", line_color="#4b5563", row=row_i, col=1)
+            if show_ann_text:
+                lbl = f"L{lid}:P{i + 1}:{p_name}" if len(chosen_lifts) > 1 else f"P{i + 1}:{p_name}"
+                fig.add_annotation(
+                    x=0.5 * (x_start + x_end),
+                    y=1.01,
+                    yref="paper",
+                    text=lbl,
+                    showarrow=False,
+                    textangle=-65,
+                    xanchor="left",
+                    yanchor="bottom",
+                    font=dict(size=8.5, color="#1f2937"),
+                )
+
+        last_x = float(sub_m.iloc[-1]["time_s"])
         for row_i in range(1, n_rows + 1):
-            fig.add_vrect(
-                x0=x_start,
-                x1=x_end,
-                fillcolor=_PHASE_BAND_COLORS[i % len(_PHASE_BAND_COLORS)],
-                layer="below",
-                line_width=0,
-                row=row_i,
-                col=1,
-            )
-            fig.add_vline(x=x_start, line_width=1, line_dash="dot", line_color="#4b5563", row=row_i, col=1)
-        fig.add_annotation(
-            x=0.5 * (x_start + x_end),
-            y=1.01,
-            yref="paper",
-            text=f"P{i + 1}:{p_name}",
-            showarrow=False,
-            textangle=-65,
-            xanchor="left",
-            yanchor="bottom",
-            font=dict(size=9, color="#1f2937"),
-        )
+            fig.add_vline(x=last_x, line_width=1, line_dash="dot", line_color="#4b5563", row=row_i, col=1)
 
-    last_x = float(lift_m.iloc[-1]["time_s"])
-    for row_i in range(1, n_rows + 1):
-        fig.add_vline(x=last_x, line_width=1, line_dash="dot", line_color="#4b5563", row=row_i, col=1)
-
+    lifts_lbl = f"Lifts {chosen_lifts[0]}–{chosen_lifts[-1]}" if len(chosen_lifts) > 1 else f"Lift {chosen_lifts[0]}"
+    sensors_lbl = ", ".join(chosen_sensors)
     fig.update_layout(
         title=dict(
-            text=f"<b>Figure 4: 11-Phase Annotation Scheme ({set_id}, Lift {lift_id}, {sensor_code} · {modality})</b>",
+            text=f"<b>Figure 4: 11-Phase Annotation Scheme ({set_id}, {lifts_lbl}, {sensors_lbl} · {modality})</b>",
             x=0.5, y=0.98, font=dict(size=13),
         ),
         template="plotly_white",
         paper_bgcolor="white",
         plot_bgcolor="white",
         font=_FONT,
-        height=480 if n_rows == 1 else 680,
-        margin=dict(l=70, r=25, t=130, b=65),
+        height=490 if n_rows == 1 else 700,
+        margin=dict(l=70, r=25, t=135 if show_ann_text else 70, b=70),
         legend=dict(orientation="h", y=-0.12 if n_rows == 1 else -0.08, x=0.5, xanchor="center"),
         hovermode="x unified",
     )
