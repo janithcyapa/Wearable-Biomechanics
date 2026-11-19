@@ -746,7 +746,10 @@ def build_annotation_agreement_table(
     return out_df
 
 
-def plot_annotation_agreement_figure(dataset_dir: str | Path) -> go.Figure:
+def plot_annotation_agreement_figure(
+    dataset_dir: str | Path,
+    bin_width_ms: float = 20.0,
+) -> go.Figure:
     """Single-panel normalized histogram (sum=1) of pooled inter-annotator SD with Median, 95th & 99th pct."""
     m_df = load_summary_tables(dataset_dir)["phase_markers"].copy()
     all3 = m_df[m_df["n_annotators"] >= 3].dropna(subset=["sd_ms"])
@@ -761,7 +764,7 @@ def plot_annotation_agreement_figure(dataset_dir: str | Path) -> go.Figure:
         fig.add_trace(
             go.Histogram(
                 x=sd_all,
-                nbinsx=45,
+                xbins=dict(start=0.0, size=float(bin_width_ms)),
                 histnorm="probability",
                 marker_color=_PALETTE[0],
                 marker_line=dict(width=0.7, color="#1f2937"),
