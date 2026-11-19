@@ -19,6 +19,20 @@ _PUB_PALETTE = [
 
 
 def _style_pub_axes(fig: go.Figure, rows: int = 1, cols: int = 1) -> None:
+    kw = {}
+    if rows == 1 and cols == 1:
+        fig.update_xaxes(
+            showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+            ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
+            zeroline=False,
+        )
+        fig.update_yaxes(
+            showline=True, linewidth=1.2, linecolor="#1f2937", mirror=True,
+            ticks="outside", showgrid=True, gridcolor="#e5e7eb", gridwidth=0.7,
+            zeroline=True, zerolinecolor="#d1d5db", zerolinewidth=0.8,
+        )
+        return
+
     for r in range(1, rows + 1):
         for c in range(1, cols + 1):
             fig.update_xaxes(
