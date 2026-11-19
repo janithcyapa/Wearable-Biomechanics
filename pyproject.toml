@@ -16,7 +16,6 @@ dependencies = [
     "matplotlib",
     "seaborn",
     "ipywidgets",
-    "itables",
     "opencv-python",
 ]
 
