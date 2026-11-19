@@ -201,12 +201,17 @@ def _build_participant_summary(
         if ach in {"", "-", "NA", "N/A", "N\\A"}:
             ach = "NA"
 
+        raw_sex = str(meta.get("sex", "")).strip().lower()
+        sex = {"male": "M", "m": "M", "female": "F", "f": "F"}.get(
+            raw_sex, raw_sex.upper() if raw_sex and raw_sex not in {"-", "na", "n/a", "n\\a"} else "NA"
+        )
+
         rows.append(
             {
                 "participant_id": pid,
                 "name": str(meta.get("name", "")).strip() or "NA",
                 "age_years": int(age) if not np.isnan(age) else pd.NA,
-                "sex": "NA",
+                "sex": sex,
                 "height_m": height if not np.isnan(height) else pd.NA,
                 "body_mass_kg": round(weight, 2) if not np.isnan(weight) else pd.NA,
                 "bmi_kg_m2": bmi if not np.isnan(bmi) else pd.NA,
