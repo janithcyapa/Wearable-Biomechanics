@@ -806,3 +806,277 @@ def plot_annotation_agreement_figure(
     )
     _pub_axes(fig)
     return fig
+
+
+def _quasistatic_mask(
+    a_sl: np.ndarray,
+    g_sl: np.ndarray,
+    static_mask: np.ndarray,
+    fs: float = 100.0,
+    win_s: float = 0.30,
+    acc_std_thresh: float = 0.18,
+    gyr_rms_thresh: float = 2.5,
+) -> tuple[np.ndarray, float]:
+    """Identify micro-movement-free quasi-static samples within `static_mask`.
+
+    Returns (qs_mask, pct_rest_retained). Falls back to the quietest 20% of
+    sliding windows in `static_mask` if strict thresholds leave too few samples.
+    """
+    n = len(a_sl)
+    w = max(10, int(round(win_s * fs)))
+    step = max(2, w // 3)
+    idx = np.flatnonzero(static_mask)
+    if len(idx) < w:
+        return static_mask.copy(), 100.0
+
+    # Local sliding-window dispersion inside the annotated rest region
+    a_mag = np.linalg.norm(a_sl, axis=1)
+    win_candidates: list[tuple[int, int, float, float]] = []
+    for pos in range(0, len(idx) - w + 1, step):
+        sl = idx[pos : pos + w]
+        # Require contiguous indices (avoid bridging across separate rest windows)
+        if sl[-1] - sl[0] > w + 2:
+            continue
+        aw = a_mag[sl]
+        gw = g_sl[sl]
+        if np.any(np.isnan(aw)) or np.any(np.isnan(gw)):
+            continue
+        a_std = float(np.std(aw))
+        g_centered = gw - np.mean(gw, axis=0, keepdims=True)
+        g_rms = float(np.sqrt(np.mean(np.sum(g_centered**2, axis=1))))
+        win_candidates.append((int(sl[0]), int(sl[-1]) + 1, a_std, g_rms))
+
+    if not win_candidates:
+        return static_mask.copy(), 100.0
+
+    qs_mask = np.zeros(n, dtype=bool)
+    for s0, s1, a_std, g_rms in win_candidates:
+        if a_std <= acc_std_thresh and g_rms <= gyr_rms_thresh:
+            qs_mask[s0:s1] = True
+
+    # Fallback: take the quietest 20% of candidate windows if strict threshold is empty
+    if np.sum(qs_mask) < w:
+        ranked = sorted(win_candidates, key=lambda x: x[3] + 5.0 * x[2])
+        keep_n = max(1, int(np.ceil(0.20 * len(ranked))))
+        for s0, s1, _, _ in ranked[:keep_n]:
+            qs_mask[s0:s1] = True
+
+    pct_retained = float(np.sum(qs_mask & static_mask) / max(1, np.sum(static_mask)) * 100.0)
+    return qs_mask, pct_retained
+
+
+def _compute_quasistatic_imu_metrics(dataset_dir: str | Path) -> dict:
+    """Compare raw annotated rest vs. micro-movement-filtered quasi-static metrics across 54 Sets x 26 IMUs."""
+    tables = load_summary_tables(dataset_dir)
+    set_ids = sorted(tables["sets"]["set_id"].tolist())
+    sensor_names: list[str] | None = None
+    rows: list[dict] = []
+
+    for sid in set_ids:
+        sd = load_set_h5(dataset_dir, sid)
+        if sensor_names is None:
+            sensor_names = sd["sensors"]
+        acc = sd["accel"]
+        gyr = sd["gyro"]
+        fs = float(sd["metadata"].get("imu_fs_hz", 100.0))
+        static_mask = _static_window_mask(sd)
+
+        for s_idx, code in enumerate(sensor_names):
+            a_sl = acc[:, s_idx, :]
+            g_sl = gyr[:, s_idx, :]
+            valid = (~np.any(np.isnan(a_sl), axis=1)) & (~np.any(np.isnan(g_sl), axis=1))
+            if not np.any(valid) or any(np.nanstd(a_sl[:, j]) == 0 for j in range(3)) or any(np.nanstd(g_sl[:, j]) == 0 for j in range(3)):
+                continue
+            if float(valid.mean() * 100.0) <= 50.0:
+                continue
+
+            # Unfiltered annotated rest (sample-wise norm mean)
+            a_raw = a_sl[static_mask & valid]
+            g_raw = g_sl[static_mask & valid]
+            if len(a_raw) < 10:
+                continue
+            raw_acc_norm = float(np.mean(np.linalg.norm(a_raw, axis=1)))
+            raw_gyr_norm_deg = float(np.mean(np.linalg.norm(g_raw, axis=1)))
+            raw_gyr_vec_deg = float(np.linalg.norm(np.mean(g_raw, axis=0)))
+
+            # Quasi-static filtered (micro-movements removed, vector mean)
+            qs_mask, pct_ret = _quasistatic_mask(a_sl, g_sl, static_mask & valid, fs=fs)
+            a_qs = a_sl[qs_mask & valid]
+            g_qs = g_sl[qs_mask & valid]
+            qs_acc_norm = float(np.linalg.norm(np.mean(a_qs, axis=0)))
+            qs_gyr_bias_deg = float(np.linalg.norm(np.mean(g_qs, axis=0)))
+            qs_gyr_bias_rad = float(np.deg2rad(qs_gyr_bias_deg))
+
+            # Micro-movement intensity inside annotated rest (AC RMS around window mean)
+            rest_motion_deg = float(np.sqrt(np.mean(np.sum((g_raw - np.mean(g_raw, axis=0, keepdims=True)) ** 2, axis=1))))
+
+            rows.append({
+                "set_id": sid,
+                "sensor_code": code,
+                "raw_acc_norm": raw_acc_norm,
+                "raw_gyr_norm_deg": raw_gyr_norm_deg,
+                "raw_gyr_vec_deg": raw_gyr_vec_deg,
+                "qs_acc_norm": qs_acc_norm,
+                "qs_gyr_bias_deg": qs_gyr_bias_deg,
+                "qs_gyr_bias_rad": qs_gyr_bias_rad,
+                "rest_motion_deg": rest_motion_deg,
+                "pct_rest_retained": pct_ret,
+            })
+
+    return {"df": pd.DataFrame(rows), "sensor_names": sensor_names or [], "set_ids": set_ids}
+
+
+def build_static_vs_quasistatic_table(dataset_dir: str | Path) -> pd.DataFrame:
+    """Compare raw annotated rest vs. micro-movement-filtered quasi-static IMU metrics."""
+    df = _compute_quasistatic_imu_metrics(dataset_dir)["df"]
+    if df.empty:
+        return pd.DataFrame()
+
+    def _row(label: str, s: pd.Series) -> dict:
+        arr = s.dropna().to_numpy(dtype=float)
+        q25, q50, q75 = np.percentile(arr, [25, 50, 75])
+        return {
+            "Condition / Metric": label,
+            "n": len(arr),
+            "Mean ± SD": f"{arr.mean():.4f} ± {arr.std(ddof=1):.4f}",
+            "Median [IQR]": f"{q50:.4f} [{q25:.4f}, {q75:.4f}]",
+        }
+
+    return pd.DataFrame([
+        _row("Annotated Rest (unfiltered): Accel Norm (m/s²)", df["raw_acc_norm"]),
+        _row("Quasi-Static Filtered: Accel Vector Norm (m/s²)", df["qs_acc_norm"]),
+        _row("Annotated Rest (unfiltered): Gyro Norm Mean (deg/s)", df["raw_gyr_norm_deg"]),
+        _row("Annotated Rest (unfiltered): Gyro Vector Mean (deg/s)", df["raw_gyr_vec_deg"]),
+        _row("Quasi-Static Filtered: Gyro Bias (deg/s)", df["qs_gyr_bias_deg"]),
+        _row("Quasi-Static Filtered: Gyro Bias (rad/s)", df["qs_gyr_bias_rad"]),
+        _row("Annotated Rest Micro-Movement RMS (deg/s)", df["rest_motion_deg"]),
+        _row("Quasi-Static Sub-Windows Retained (%)", df["pct_rest_retained"]),
+    ])
+
+
+def plot_quasistatic_imu_validation(
+    dataset_dir: str | Path,
+    unit: str = "rad/s",
+    show_outliers: bool = False,
+) -> go.Figure:
+    """2-panel Quasi-Static (micro-movement-filtered) Accel Norm & Gyro Bias per IMU."""
+    data = _compute_quasistatic_imu_metrics(dataset_dir)
+    df = data["df"]
+    sensors = data["sensor_names"]
+    boxpoints = "outliers" if show_outliers else False
+    gyr_col = "qs_gyr_bias_rad" if unit == "rad/s" else "qs_gyr_bias_deg"
+    gyr_lbl = f"Quasi-Static |b_ω| ({unit})"
+
+    fig = make_subplots(
+        rows=2,
+        cols=1,
+        shared_xaxes=True,
+        vertical_spacing=0.14,
+        subplot_titles=(
+            "<b>(a) Quasi-Static Accelerometer Vector Norm per IMU (Micro-Movements Filtered)</b>",
+            f"<b>(b) Quasi-Static Gyroscope Bias Magnitude per IMU ({unit})</b>",
+        ),
+    )
+
+    for code in sensors:
+        vals = df[df["sensor_code"] == code]["qs_acc_norm"].dropna()
+        fig.add_trace(go.Box(y=vals, name=code, marker_color=_PALETTE[0], showlegend=False, boxpoints=boxpoints), row=1, col=1)
+    fig.add_hline(y=9.81, line_dash="dash", line_color="#D55E00", annotation_text="9.81 m/s²", row=1, col=1)
+
+    for code in sensors:
+        vals = df[df["sensor_code"] == code][gyr_col].dropna()
+        fig.add_trace(go.Box(y=vals, name=code, marker_color=_PALETTE[2], showlegend=False, boxpoints=boxpoints), row=2, col=1)
+    fig.add_hline(y=0.0, line_dash="dash", line_color="#374151", row=2, col=1)
+
+    fig.update_layout(
+        title=dict(
+            text="<b>Quasi-Static IMU Calibration & Bias Validation (Micro-Movement Filtered)</b>",
+            x=0.5, y=0.97, font=dict(size=14),
+        ),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=700,
+        margin=dict(l=75, r=30, t=80, b=80),
+    )
+    _pub_axes(fig, rows=2, cols=1)
+    fig.update_yaxes(title_text="Quasi-Static ||ā|| (m/s²)", row=1, col=1)
+    fig.update_xaxes(title_text="IMU Sensor", tickangle=-45, tickfont=dict(size=9), showticklabels=True, row=2, col=1)
+    fig.update_yaxes(title_text=gyr_lbl, row=2, col=1)
+
+    if not show_outliers:
+        acc_range = _iqr_y_bounds(df["qs_acc_norm"])
+        if acc_range is not None:
+            fig.update_yaxes(range=[min(acc_range[0], 9.2), max(acc_range[1], 10.4)], row=1, col=1)
+        gyr_range = _iqr_y_bounds(df[gyr_col], floor=0.0)
+        if gyr_range is not None:
+            fig.update_yaxes(range=[-0.002 if unit == "rad/s" else -0.05, gyr_range[1]], row=2, col=1)
+    return fig
+
+
+def plot_stationary_gyro_bias_profile(
+    dataset_dir: str | Path,
+    set_id: str = "set_0001",
+    sensor_code: str = "US",
+) -> go.Figure:
+    """3-axis stationary gyroscope bias (rad/s) with ±σ_RW·sqrt(t) random-walk bounds."""
+    sd = load_set_h5(dataset_dir, set_id)
+    if sensor_code not in sd["sensors"]:
+        raise ValueError(f"Sensor '{sensor_code}' not found in {sd['sensors']}")
+    s_idx = sd["sensors"].index(sensor_code)
+    fs = float(sd["metadata"].get("imu_fs_hz", 100.0))
+    a_sl = sd["accel"][:, s_idx, :]
+    g_sl = sd["gyro"][:, s_idx, :]
+    valid = (~np.any(np.isnan(a_sl), axis=1)) & (~np.any(np.isnan(g_sl), axis=1))
+    static_mask = _static_window_mask(sd) & valid
+    qs_mask, _ = _quasistatic_mask(a_sl, g_sl, static_mask, fs=fs)
+
+    g_qs_rad = np.deg2rad(g_sl[qs_mask & valid])
+    t_qs = np.arange(len(g_qs_rad)) / fs
+    bias = np.mean(g_qs_rad, axis=0)
+    # Estimate per-axis angle random walk / white-noise σ_g and ±σ_RW·sqrt(t) envelope
+    noise_std = np.std(g_qs_rad - bias, axis=0, ddof=1)
+    dt = 1.0 / fs
+
+    fig = make_subplots(rows=3, cols=1, shared_xaxes=True, vertical_spacing=0.07)
+    axis_names = ["X-axis", "Y-axis", "Z-axis"]
+    for ax_i in range(3):
+        b_i = float(bias[ax_i])
+        sigma_rw = float(noise_std[ax_i] * np.sqrt(dt))
+        env = sigma_rw * np.sqrt(np.maximum(t_qs, 0.0))
+        fig.add_trace(
+            go.Scatter(x=t_qs, y=np.full_like(t_qs, b_i), mode="lines",
+                       name=f"{axis_names[ax_i]} bias ({b_i:+.5f} rad/s)",
+                       line=dict(color=_PALETTE[0], width=2.4)),
+            row=ax_i + 1, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=t_qs, y=b_i + env, mode="lines", showlegend=(ax_i == 0),
+                       name="±σ_RW·√t bound", line=dict(color=_PALETTE[1], width=1.6, dash="dash")),
+            row=ax_i + 1, col=1,
+        )
+        fig.add_trace(
+            go.Scatter(x=t_qs, y=b_i - env, mode="lines", showlegend=False,
+                       line=dict(color=_PALETTE[1], width=1.6, dash="dash")),
+            row=ax_i + 1, col=1,
+        )
+        fig.update_yaxes(title_text=f"{axis_names[ax_i]}<br>bias (rad/s)", row=ax_i + 1, col=1)
+
+    fig.update_layout(
+        title=dict(
+            text=f"<b>Stationary Gyroscope Bias & Random-Walk Bounds — {set_id} · {sensor_code}</b>",
+            x=0.5, y=0.97, font=dict(size=14),
+        ),
+        template="plotly_white",
+        paper_bgcolor="white",
+        plot_bgcolor="white",
+        font=_FONT,
+        height=560,
+        margin=dict(l=85, r=25, t=70, b=55),
+        legend=dict(orientation="h", y=-0.12, x=0.5, xanchor="center"),
+    )
+    _pub_axes(fig, rows=3, cols=1)
+    fig.update_xaxes(title_text="Quasi-Static Time (s)", row=3, col=1)
+    return fig
+
