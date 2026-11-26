@@ -72,12 +72,15 @@ def load_set_h5(dataset_dir: str | Path, set_id: str) -> dict:
                 for k, v in f["phase_markers/annotators"].items()
             }
         )
-        fault_log_df = pd.DataFrame(
-            {
-                k: (_decode_arr(v[:]) if v.dtype.kind in {"S", "O"} else v[:])
-                for k, v in f["fault_log"].items()
-            }
-        )
+        if "fault_log" in f:
+            fault_log_df = pd.DataFrame(
+                {
+                    k: (_decode_arr(v[:]) if v.dtype.kind in {"S", "O"} else v[:])
+                    for k, v in f["fault_log"].items()
+                }
+            )
+        else:
+            fault_log_df = pd.DataFrame()
 
     return {
         "set_id": set_id,
