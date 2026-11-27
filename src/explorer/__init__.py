@@ -1,5 +1,12 @@
 """Clean&JerkDataset loader and publication-grade Plotly visualization tools."""
 
+from .annotator_analysis import (
+    build_annotator_sd_attribution_table,
+    load_annotator_marker_records,
+    plot_annotator_loao_impact,
+    plot_annotator_sd_ecdf_and_box,
+    plot_annotator_sd_small_multiples,
+)
 from .faults import (
     JOINT_SENSOR_PAIRS,
     detect_set_faults,
@@ -36,15 +43,20 @@ __all__ = [
     "DEFAULT_CLEAN_DATASET_DIR",
     "JOINT_SENSOR_PAIRS",
     "build_annotation_agreement_table",
+    "build_annotator_sd_attribution_table",
     "build_imu_quality_table",
     "build_paper_tables",
     "build_static_vs_quasistatic_table",
     "detect_set_faults",
     "launch_fault_logger",
+    "load_annotator_marker_records",
     "load_set_h5",
     "load_summary_tables",
     "plot_all_sets_annotation_sd_heatmap",
     "plot_annotation_agreement_figure",
+    "plot_annotator_loao_impact",
+    "plot_annotator_sd_ecdf_and_box",
+    "plot_annotator_sd_small_multiples",
     "plot_cohort_overview",
     "plot_fig4_annotation_scheme",
     "plot_imu_validation_figure",
